@@ -35,9 +35,11 @@ npm run dev          # http://127.0.0.1:5173/
 Redirect URIs registered in the Spotify app:
 
 - `http://127.0.0.1:5173/` (local)
+- `https://bop-box.vercel.app/` (Vercel)
 - `https://<github-user>.github.io/bop-box/` (GitHub Pages)
 
 ## Deploy
 
-Pushing to `main` builds and deploys to GitHub Pages (`.github/workflows/deploy.yml`).
+Pushing to `main` deploys to **Vercel** (https://bop-box.vercel.app, via the Vercel GitHub integration,
+env vars `VITE_SPOTIFY_CLIENT_ID` and `BASE_PATH=/`) and to **GitHub Pages** (`.github/workflows/deploy.yml`).
 The Client ID comes from the repository variable `SPOTIFY_CLIENT_ID`. It's a public identifier in a PKCE app, not a secret.
