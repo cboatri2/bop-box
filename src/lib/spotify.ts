@@ -292,6 +292,9 @@ export async function getPlaylistSongs(id: string): Promise<Song[]> {
   return songs
 }
 
+export const renamePlaylist = (id: string, kidName: string) =>
+  api(`/playlists/${id}`, { method: 'PUT', body: JSON.stringify({ name: `${kidName}'s Bop Box ✨` }) })
+
 export const addToPlaylist = (id: string, uris: string[]) =>
   api(`/playlists/${id}/items`, { method: 'POST', body: JSON.stringify({ uris, position: 0 }) })
 

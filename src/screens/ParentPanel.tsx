@@ -11,6 +11,7 @@ import {
   getTrack,
   logout,
   parseSpotifyLink,
+  renamePlaylist,
   searchTracks,
   type Me,
   type Song,
@@ -419,7 +420,12 @@ function Settings({ me }: { me: Me | null }) {
           className="field"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onBlur={() => name.trim() && updateSettings({ kidName: name.trim() })}
+          onBlur={() => {
+            const n = name.trim()
+            if (!n || n === s.kidName) return
+            updateSettings({ kidName: n })
+            if (s.playlistId) renamePlaylist(s.playlistId, n).catch(() => {})
+          }}
           maxLength={24}
         />
       </div>

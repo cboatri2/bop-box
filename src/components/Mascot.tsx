@@ -29,7 +29,7 @@ export function Mascot({ size = 96, mood = 'happy', accessory = 'headphones', bo
         </span>
       )}
       <svg viewBox="0 0 120 120" width={size} height={size}>
-        <ellipse className="mascot-shadow" cx="60" cy="113" rx="30" ry="5" fill={INK} opacity=".12" />
+        <ellipse className="mascot-shadow" cx="60" cy="113" rx="30" ry="5" fill={INK} fillOpacity=".13" />
         <g className="mascot-body">
           {accessory === 'ears' && (
             <g>
@@ -64,8 +64,8 @@ export function Mascot({ size = 96, mood = 'happy', accessory = 'headphones', bo
           )}
 
           {/* cheeks */}
-          <ellipse cx="36" cy="75" rx="6.5" ry="4" fill="#FF7FA8" opacity=".55" />
-          <ellipse cx="84" cy="75" rx="6.5" ry="4" fill="#FF7FA8" opacity=".55" />
+          <ellipse cx="36" cy="75" rx="6.5" ry="4" fill="#F0367A" opacity=".42" />
+          <ellipse cx="84" cy="75" rx="6.5" ry="4" fill="#F0367A" opacity=".42" />
 
           {/* mouth */}
           {mood === 'singing' || mood === 'wow' ? (
