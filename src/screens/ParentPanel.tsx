@@ -14,33 +14,39 @@ import {
   renamePlaylist,
   searchTracks,
   type Me,
+  type PlaylistInfo,
   type Song,
   type Track,
 } from '../lib/spotify'
+import { isBopBoxPlaylist } from '../lib/library'
 import { hashPin, updateSettings, useSettings } from '../lib/store'
 import { toast } from '../lib/toast'
 import { BuddyPicker } from './Setup'
 
-type Tab = 'add' | 'list' | 'wishes' | 'settings'
+type Tab = 'playlists' | 'add' | 'list' | 'wishes' | 'settings'
 
 type Props = {
   me: Me | null
   songs: Song[]
+  playlists: PlaylistInfo[]
+  pickedId?: string
+  onApprovedChange: () => void
   onAdd: (tracks: Track[]) => Promise<void>
   onRemove: (uri: string) => Promise<void>
   onClose: () => void
   initialTab?: Tab
 }
 
-export function ParentPanel({ me, songs, onAdd, onRemove, onClose, initialTab = 'add' }: Props) {
+export function ParentPanel({ me, songs, playlists, pickedId, onApprovedChange, onAdd, onRemove, onClose, initialTab = 'playlists' }: Props) {
   const s = useSettings()
   const [tab, setTab] = useState<Tab>(initialTab)
   const [query, setQuery] = useState('')
   const name = s.kidName || 'Kiddo'
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
+    { id: 'playlists', label: 'Playlists', count: s.approvedPlaylists.length },
     { id: 'add', label: 'Add songs' },
-    { id: 'list', label: `${name}'s songs`, count: songs.length },
+    { id: 'list', label: 'Picked for you', count: songs.length },
     { id: 'wishes', label: 'Wishes', count: s.wishes.length },
     { id: 'settings', label: 'Settings' },
   ]
@@ -70,7 +76,7 @@ export function ParentPanel({ me, songs, onAdd, onRemove, onClose, initialTab = 
       <nav className="tabs" role="tablist">
         {tabs.map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? 'is-on' : ''}`} onClick={() => setTab(t.id)}>
-            {t.label}
+            <span>{t.label}</span>
             {!!t.count && <span className="tab-count">{t.count}</span>}
             {tab === t.id && <motion.span layoutId="tab-pill" className="tab-pill" transition={{ type: 'spring', stiffness: 500, damping: 38 }} />}
           </button>
@@ -78,6 +84,9 @@ export function ParentPanel({ me, songs, onAdd, onRemove, onClose, initialTab = 
       </nav>
 
       <div className="parent-body">
+        {tab === 'playlists' && (
+          <ApprovedPlaylists me={me} playlists={playlists} pickedId={pickedId} onChange={onApprovedChange} onAddSongs={() => setTab('add')} />
+        )}
         {tab === 'add' && <AddSongs songs={songs} onAdd={onAdd} query={query} setQuery={setQuery} />}
         {tab === 'list' && <SongList songs={songs} onRemove={onRemove} onAddMore={() => setTab('add')} />}
         {tab === 'wishes' && (
@@ -91,6 +100,89 @@ export function ParentPanel({ me, songs, onAdd, onRemove, onClose, initialTab = 
         {tab === 'settings' && <Settings me={me} />}
       </div>
     </motion.div>
+  )
+}
+
+// ── Approved playlists ──────────────────────────────────────────────────────
+
+function ApprovedPlaylists({
+  me,
+  playlists,
+  pickedId,
+  onChange,
+  onAddSongs,
+}: {
+  me: Me | null
+  playlists: PlaylistInfo[]
+  pickedId?: string
+  onChange: () => void
+  onAddSongs: () => void
+}) {
+  const s = useSettings()
+  const name = s.kidName || 'your kiddo'
+  const approved = new Set(s.approvedPlaylists)
+  const yours = playlists.filter((p) => !isBopBoxPlaylist(p, pickedId))
+  const readable = yours.filter((p) => p.owner.id === me?.id || p.collaborative)
+  const others = yours.length - readable.length
+
+  const toggle = (id: string) => {
+    updateSettings((st) => ({
+      approvedPlaylists: st.approvedPlaylists.includes(id)
+        ? st.approvedPlaylists.filter((x) => x !== id)
+        : [...st.approvedPlaylists, id],
+    }))
+    onChange()
+  }
+
+  return (
+    <section>
+      <p className="lead">
+        Turn on the playlists {name} can listen to. Each one becomes a shelf in {name}'s music box. Add songs to them in
+        the Spotify app any time and they show up here automatically.
+      </p>
+      {s.hideExplicit && <p className="muted small">Explicit songs stay hidden, even inside these playlists.</p>}
+
+      <ul className="rows">
+        <li className="row">
+          <span className="wish-star">✨</span>
+          <div className="row-text">
+            <span className="row-title">Picked for you</span>
+            <span className="row-sub">Songs you add one at a time in Bop Box. Always on.</span>
+          </div>
+          <button className="btn-add" onClick={onAddSongs}>
+            <Icon name="plus" size={18} /> Add songs
+          </button>
+        </li>
+        {readable.map((p) => (
+          <li key={p.id} className="row">
+            {p.images[0] ? <img className="row-art" src={p.images[0].url} alt="" loading="lazy" /> : <span className="wish-star">🎵</span>}
+            <div className="row-text">
+              <span className="row-title">{p.name}</span>
+              <span className="row-sub">
+                {p.total} {p.total === 1 ? 'song' : 'songs'}
+                {p.owner.id !== me?.id && ' · collaborative'}
+              </span>
+            </div>
+            <button
+              role="switch"
+              aria-checked={approved.has(p.id)}
+              aria-label={`Let ${name} play ${p.name}`}
+              className={`switch ${approved.has(p.id) ? 'is-on' : ''}`}
+              onClick={() => toggle(p.id)}
+            >
+              <motion.span layout className="switch-knob" transition={{ type: 'spring', stiffness: 600, damping: 34 }} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {readable.length === 0 && <p className="muted center">No playlists yet. Make one in the Spotify app and it'll show up here.</p>}
+      {others > 0 && (
+        <p className="muted small center">
+          {others} playlist{others === 1 ? '' : 's'} made by other people {others === 1 ? 'is' : 'are'} hidden. Spotify
+          only lets apps read playlists you made. To use one, copy its songs into a playlist of your own.
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -247,10 +339,8 @@ function AddSongs({
           <div className="hint">
             <Icon name="music" />
             <div>
-              <b>Or use Spotify itself</b>
-              <p>
-                Anything you add to the playlist “{s.kidName || 'My'}'s Bop Box ✨” in Spotify shows up here too.
-              </p>
+              <b>Or use whole playlists</b>
+              <p>Turn on your own playlists in the Playlists tab. They stay in sync with Spotify.</p>
             </div>
           </div>
         </div>
@@ -439,7 +529,7 @@ function Settings({ me }: { me: Me | null }) {
         <h3>Listening rules</h3>
         <Toggle
           label="Hide explicit songs"
-          hint="Explicit songs won't show up when you search."
+          hint="Explicit songs are hidden everywhere in Bop Box, even inside approved playlists."
           on={s.hideExplicit}
           onChange={(v) => updateSettings({ hideExplicit: v })}
         />

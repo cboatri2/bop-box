@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import * as sp from './spotify'
 import type { Song, Track } from './spotify'
 import { toast } from './toast'
+import { DEMO } from './demo-flag'
 
 // ── Spotify Web Playback SDK (minimal typings) ──────────────────────────────
 
@@ -137,6 +138,7 @@ let started = false
 
 export function initPlayer(cap: number) {
   maxVolume = cap / 100
+  if (DEMO) return set({ sdk: 'ready', sdkDeviceId: 'demo', deviceId: 'demo' })
   if (started) return
   started = true
 
@@ -246,6 +248,11 @@ export function unlockAudio() {
 
 export async function playSongs(songs: Song[], index: number) {
   unlockAudio()
+  if (DEMO) {
+    const s = songs[index]
+    set({ track: { ...s }, paused: false, position: 0, duration: s.duration_ms, stamp: Date.now(), sleepy: false })
+    return true
+  }
   const dev = state.deviceId
   if (!dev) {
     toast(
@@ -304,6 +311,7 @@ export async function playSongs(songs: Song[], index: number) {
 
 export async function togglePlay() {
   unlockAudio()
+  if (DEMO) return set({ paused: !state.paused, position: livePosition(state), stamp: Date.now() })
   const dev = state.deviceId
   if (!dev || !state.track) return
   const wasPaused = state.paused

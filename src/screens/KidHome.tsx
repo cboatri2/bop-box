@@ -1,11 +1,14 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
+import type { MixOps } from '../App'
 import { Mascot } from '../components/Mascot'
 import { Burst, buzz, Equalizer, Icon, Sheet, useTick } from '../components/ui'
 import { livePosition, playSongs, skip, togglePlay, usePlayer } from '../lib/player'
+import type { Mix, Shelf } from '../lib/library'
 import { art, artistNames, type Song } from '../lib/spotify'
 import { toggleFavorite, updateSettings, useSettings } from '../lib/store'
 import { toast } from '../lib/toast'
+import { AddSongsSheet, MixSheet, ReorderList, themeColor } from './Mixes'
 
 const TILTS = [-2.4, 1.8, -1.2, 2.6, -2, 1.2, -2.8, 2.2]
 const NEW_MS = 4 * 24 * 3600 * 1000
@@ -18,25 +21,49 @@ function greeting() {
   return 'Good evening'
 }
 
+type Sel = { kind: 'all' } | { kind: 'favs' } | { kind: 'shelf'; id: string } | { kind: 'mix'; id: string }
+
 type Props = {
   songs: Song[]
+  shelves: Shelf[]
+  mixes: Mix[]
+  mixOps: MixOps
   loading: boolean
   onOpenPlayer: () => void
   onGrownUps: () => void
 }
 
-export function KidHome({ songs, loading, onOpenPlayer, onGrownUps }: Props) {
+export function KidHome({ songs, shelves, mixes, mixOps, loading, onOpenPlayer, onGrownUps }: Props) {
   const s = useSettings()
   const p = usePlayer()
-  const [filter, setFilter] = useState<'all' | 'favs'>('all')
+  const [sel, setSel] = useState<Sel>({ kind: 'all' })
   const [burst, setBurst] = useState(0)
   const [wishOpen, setWishOpen] = useState(false)
+  const [mixSheet, setMixSheet] = useState<null | 'new' | 'edit'>(null)
+  const [adding, setAdding] = useState(false)
+  const [moving, setMoving] = useState(false)
 
   const favSet = useMemo(() => new Set(s.favorites), [s.favorites])
-  const shown = useMemo(
-    () => (filter === 'favs' ? songs.filter((x) => favSet.has(x.uri)) : songs),
-    [songs, filter, favSet],
-  )
+  const shelf = sel.kind === 'shelf' ? shelves.find((x) => x.id === sel.id) : undefined
+  const mix = sel.kind === 'mix' ? mixes.find((x) => x.id === sel.id) ?? null : null
+
+  // If the selected shelf/mix disappears (un-approved, deleted), fall back to All.
+  useEffect(() => {
+    if ((sel.kind === 'shelf' && !shelf) || (sel.kind === 'mix' && !mix)) setSel({ kind: 'all' })
+  }, [sel, shelf, mix])
+  useEffect(() => setMoving(false), [sel])
+
+  const shown = useMemo(() => {
+    if (sel.kind === 'favs') return songs.filter((x) => favSet.has(x.uri))
+    if (shelf) return shelf.songs
+    if (mix) return mix.songs
+    return songs
+  }, [sel.kind, songs, favSet, shelf, mix])
+
+  const title =
+    sel.kind === 'favs' ? 'My favorites' : shelf ? shelfName(shelf) : mix ? mix.name : 'All my songs'
+  const titleIcon = sel.kind === 'favs' ? '💖' : mix ? mix.emoji : shelf ? '🎵' : '🎶'
+
   const playingUri = p.track?.uri
   const isPlaying = !p.paused && !!p.track
 
@@ -47,11 +74,15 @@ export function KidHome({ songs, loading, onOpenPlayer, onGrownUps }: Props) {
   }
 
   const surprise = () => {
-    if (!songs.length) return
-    setBurst((b) => b + 1)
     const pool = shown.length ? shown : songs
-    const shuffled = [...pool].sort(() => Math.random() - 0.5)
-    void play(shuffled, 0)
+    if (!pool.length) return
+    setBurst((b) => b + 1)
+    void play([...pool].sort(() => Math.random() - 0.5), 0)
+  }
+
+  const pick = (next: Sel) => {
+    buzz()
+    setSel(next)
   }
 
   return (
@@ -74,20 +105,82 @@ export function KidHome({ songs, loading, onOpenPlayer, onGrownUps }: Props) {
         </div>
       </header>
 
-      <div className="action-row">
-        <span className="burst-anchor">
-          <button className="btn-candy btn-lg surprise" onClick={surprise} disabled={!songs.length}>
-            <Icon name="dice" size={26} /> Surprise me!
+      <section className="rail-section" aria-label="Music shelves">
+        <h2 className="rail-label">Music shelves</h2>
+        <div className="rail">
+          <Tile label="All songs" count={songs.length} on={sel.kind === 'all'} onClick={() => pick({ kind: 'all' })} glyph="🎶" bg="var(--accent)" />
+          <Tile label="Favorites" count={songs.filter((x) => favSet.has(x.uri)).length} on={sel.kind === 'favs'} onClick={() => pick({ kind: 'favs' })} glyph="💖" bg="#FF7FAE" />
+          {shelves.map((sh) => (
+            <Tile
+              key={sh.id}
+              label={shelfName(sh)}
+              count={sh.songs.length}
+              on={sel.kind === 'shelf' && sel.id === sh.id}
+              onClick={() => pick({ kind: 'shelf', id: sh.id })}
+              image={sh.images[0]?.url || (sh.songs[0] ? art(sh.songs[0], 'sm') : '')}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="rail-section" aria-label="My mixes">
+        <h2 className="rail-label">My mixes</h2>
+        <div className="rail">
+          {mixes.map((m) => (
+            <Tile
+              key={m.id}
+              label={m.name}
+              count={m.songs.length}
+              on={sel.kind === 'mix' && sel.id === m.id}
+              onClick={() => pick({ kind: 'mix', id: m.id })}
+              glyph={m.emoji}
+              bg={themeColor(m.color)}
+            />
+          ))}
+          <button className="tile tile-new" onClick={() => setMixSheet('new')} disabled={!songs.length}>
+            <span className="tile-art">
+              <Icon name="plus" size={40} />
+            </span>
+            <span className="tile-label">Make a mix</span>
           </button>
-          <Burst fire={burst} />
-        </span>
-        <div className="chips" role="tablist">
-          <button role="tab" aria-selected={filter === 'all'} className={`chip ${filter === 'all' ? 'is-on' : ''}`} onClick={() => setFilter('all')}>
-            <Icon name="music" size={18} /> All songs <b>{songs.length}</b>
-          </button>
-          <button role="tab" aria-selected={filter === 'favs'} className={`chip ${filter === 'favs' ? 'is-on' : ''}`} onClick={() => setFilter('favs')}>
-            <Icon name="heart-fill" size={18} /> Favorites <b>{favSet.size}</b>
-          </button>
+        </div>
+      </section>
+
+      <div className="view-head">
+        <AnimatePresence mode="popLayout">
+          <motion.h2
+            key={title}
+            className="view-title"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+          >
+            <span className="view-emoji">{titleIcon}</span> {title}
+          </motion.h2>
+        </AnimatePresence>
+        <div className="view-actions">
+          <span className="burst-anchor">
+            <button className="btn-candy surprise" onClick={surprise} disabled={!shown.length}>
+              <Icon name="dice" size={24} /> Surprise me!
+            </button>
+            <Burst fire={burst} />
+          </span>
+          {mix && (
+            <>
+              <button className="btn-soft" onClick={() => setAdding(true)}>
+                <Icon name="plus" size={20} /> Add songs
+              </button>
+              {mix.songs.length > 1 && (
+                <button className={`btn-soft ${moving ? 'is-on' : ''}`} onClick={() => setMoving((m) => !m)}>
+                  <Icon name={moving ? 'check' : 'move'} size={20} /> {moving ? 'Done' : 'Move'}
+                </button>
+              )}
+              <button className="icon-btn" aria-label="Change this mix" onClick={() => setMixSheet('edit')}>
+                <Icon name="pencil" size={20} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -101,10 +194,20 @@ export function KidHome({ songs, loading, onOpenPlayer, onGrownUps }: Props) {
             </div>
           ))}
         </div>
+      ) : mix && moving ? (
+        <ReorderList mix={mix} onReorder={(list) => void mixOps.reorder(mix.id, list)} onRemove={(uri) => void mixOps.removeSong(mix.id, uri)} />
       ) : shown.length === 0 ? (
         <div className="empty">
           <Mascot size={130} mood="wow" accessory={s.accessory} />
-          {filter === 'favs' ? (
+          {mix ? (
+            <>
+              <h2 className="h2">Your mix is empty!</h2>
+              <p className="muted">Pick some songs to put in it.</p>
+              <button className="btn-candy" onClick={() => setAdding(true)}>
+                <Icon name="plus" /> Add songs
+              </button>
+            </>
+          ) : sel.kind === 'favs' ? (
             <>
               <h2 className="h2">No favorites yet</h2>
               <p className="muted">Tap the little heart on a song you love!</p>
@@ -120,14 +223,14 @@ export function KidHome({ songs, loading, onOpenPlayer, onGrownUps }: Props) {
           )}
         </div>
       ) : (
-        <motion.div className="grid" initial="hide" animate="show" variants={{ show: { transition: { staggerChildren: 0.035 } } }}>
+        <motion.div key={JSON.stringify(sel)} className="grid" initial="hide" animate="show" variants={{ show: { transition: { staggerChildren: 0.03 } } }}>
           {shown.map((song, i) => (
             <SongCard
               key={song.uri}
               song={song}
               tilt={TILTS[i % TILTS.length]}
               fav={favSet.has(song.uri)}
-              playing={playingUri === song.uri || playingUri === song.linked_from?.uri}
+              playing={!!playingUri && (playingUri === song.uri || playingUri === song.linked_from?.uri)}
               isPlaying={isPlaying}
               onPlay={() => void play(shown, i)}
             />
@@ -137,7 +240,74 @@ export function KidHome({ songs, loading, onOpenPlayer, onGrownUps }: Props) {
 
       <AnimatePresence>{p.track && <MiniPlayer onOpen={onOpenPlayer} />}</AnimatePresence>
       <WishSheet open={wishOpen} onClose={() => setWishOpen(false)} />
+      <MixSheet
+        open={mixSheet !== null}
+        mix={mixSheet === 'edit' ? mix : null}
+        onClose={() => setMixSheet(null)}
+        onSave={async (name, emoji, color) => {
+          if (mixSheet === 'edit' && mix) {
+            setMixSheet(null)
+            await mixOps.edit(mix.id, name, emoji, color)
+            return
+          }
+          setMixSheet(null)
+          const made = await mixOps.create(name, emoji, color)
+          if (made) {
+            setBurst((b) => b + 1)
+            setSel({ kind: 'mix', id: made.id })
+            toast(`Ta-da! “${name}” is ready`, emoji)
+            setTimeout(() => setAdding(true), 350)
+          }
+        }}
+        onDelete={
+          mix
+            ? () => {
+                setMixSheet(null)
+                setSel({ kind: 'all' })
+                void mixOps.remove(mix.id)
+              }
+            : undefined
+        }
+      />
+      <AddSongsSheet
+        open={adding}
+        onClose={() => setAdding(false)}
+        mix={mix}
+        songs={songs}
+        shelves={shelves}
+        onToggle={(song, inMix) => void (inMix ? mixOps.removeSong(mix!.id, song.uri) : mixOps.addSong(mix!.id, song))}
+      />
     </main>
+  )
+}
+
+const shelfName = (sh: Shelf) => (sh.name === 'Picked for you' ? 'Picked for you ✨' : sh.name)
+
+function Tile({
+  label,
+  count,
+  on,
+  onClick,
+  glyph,
+  bg,
+  image,
+}: {
+  label: string
+  count: number
+  on: boolean
+  onClick: () => void
+  glyph?: string
+  bg?: string
+  image?: string
+}) {
+  return (
+    <motion.button className={`tile ${on ? 'is-on' : ''}`} onClick={onClick} whileTap={{ scale: 0.92 }} aria-pressed={on}>
+      <span className="tile-art" style={bg ? { ['--tile' as string]: bg } : undefined}>
+        {image ? <img src={image} alt="" draggable={false} /> : <span className="tile-glyph">{glyph}</span>}
+        <span className="tile-count">{count}</span>
+      </span>
+      <span className="tile-label">{label}</span>
+    </motion.button>
   )
 }
 

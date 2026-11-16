@@ -14,7 +14,9 @@ import {
   togglePlay,
   usePlayer,
 } from '../lib/player'
-import { art, artistNames, type Device } from '../lib/spotify'
+import type { MixOps } from '../App'
+import type { Mix } from '../lib/library'
+import { art, artistNames, type Device, type Song } from '../lib/spotify'
 import { toggleFavorite, useSettings } from '../lib/store'
 import { toast } from '../lib/toast'
 
@@ -25,11 +27,11 @@ const fmt = (ms: number) => {
 
 const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
-export function NowPlaying({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function NowPlaying({ open, onClose, mixes, mixOps }: { open: boolean; onClose: () => void; mixes: Mix[]; mixOps: MixOps }) {
   const p = usePlayer()
   const s = useSettings()
   const [color, setColor] = useState<string | null>(null)
-  const [sheet, setSheet] = useState<null | 'sleep' | 'speaker'>(null)
+  const [sheet, setSheet] = useState<null | 'sleep' | 'speaker' | 'mix'>(null)
   const drag = useDragControls()
   useTick(open && !p.paused, 250)
 
@@ -111,6 +113,9 @@ export function NowPlaying({ open, onClose }: { open: boolean; onClose: () => vo
                 <h2 className="np-title">{p.track.name}</h2>
                 <p className="np-artist">{artistNames(p.track)}</p>
               </div>
+              <motion.button className="np-heart" aria-label="Put in a mix" whileTap={{ scale: 1.2 }} onClick={() => setSheet('mix')}>
+                <Icon name="plus" size={30} />
+              </motion.button>
               <motion.button
                 className={`np-heart ${fav ? 'is-on' : ''}`}
                 aria-label={fav ? 'Remove from favorites' : 'Add to favorites'}
@@ -188,6 +193,13 @@ export function NowPlaying({ open, onClose }: { open: boolean; onClose: () => vo
 
           <SleepSheet open={sheet === 'sleep'} onClose={() => setSheet(null)} active={!!p.sleepEndsAt} />
           <SpeakerSheet open={sheet === 'speaker'} onClose={() => setSheet(null)} />
+          <PutInMixSheet
+            open={sheet === 'mix'}
+            onClose={() => setSheet(null)}
+            mixes={mixes}
+            song={{ ...p.track, explicit: false, addedAt: new Date().toISOString() }}
+            mixOps={mixOps}
+          />
         </motion.div>
       )}
     </AnimatePresence>
@@ -256,6 +268,40 @@ export function SpeakerSheet({ open, onClose }: { open: boolean; onClose: () => 
           <p className="muted">No speakers found. Open Spotify on a speaker or computer, then try again.</p>
         )}
       </div>
+    </Sheet>
+  )
+}
+
+function PutInMixSheet({ open, onClose, mixes, song, mixOps }: { open: boolean; onClose: () => void; mixes: Mix[]; song: Song; mixOps: MixOps }) {
+  return (
+    <Sheet open={open} onClose={onClose} title="Put this song in a mix">
+      {mixes.length === 0 ? (
+        <p className="muted">You don't have any mixes yet. Tap “Make a mix” on the home screen!</p>
+      ) : (
+        <div className="device-list">
+          {mixes.map((m) => {
+            const has = m.songs.some((x) => x.uri === song.uri)
+            return (
+              <button
+                key={m.id}
+                className={`device ${has ? 'is-on' : ''}`}
+                onClick={() => {
+                  buzz()
+                  if (has) void mixOps.removeSong(m.id, song.uri)
+                  else {
+                    void mixOps.addSong(m.id, song)
+                    toast(`Added to ${m.name}!`, m.emoji)
+                  }
+                }}
+              >
+                <span className="device-emoji">{m.emoji}</span>
+                <span>{m.name}</span>
+                <Icon name={has ? 'check' : 'plus'} />
+              </button>
+            )
+          })}
+        </div>
+      )}
     </Sheet>
   )
 }

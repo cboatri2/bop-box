@@ -16,11 +16,15 @@ export type Settings = {
   nightColors: boolean // cozy dark colors in the evening
   playlistId?: string
   setupDone: boolean
+  approvedPlaylists: string[] // grown-up playlists the kid may play
+  mixMeta: Record<string, { emoji: string; color: ThemeName }> // fallback if Spotify hides descriptions
   favorites: string[] // track uris
   wishes: { id: string; text: string; at: number }[]
 }
 
-const KEY = 'bopbox.settings'
+import { DEMO } from './demo-flag'
+
+const KEY = DEMO ? 'bopbox.settings.demo' : 'bopbox.settings'
 
 const defaults: Settings = {
   kidName: '',
@@ -31,6 +35,8 @@ const defaults: Settings = {
   maxVolume: 70,
   nightColors: true,
   setupDone: false,
+  approvedPlaylists: [],
+  mixMeta: {},
   favorites: [],
   wishes: [],
 }

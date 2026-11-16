@@ -4,6 +4,8 @@
 //   • search returns at most 10 results per page
 //   • the app owner must have Premium
 
+import { DEMO } from './demo-flag'
+
 export const CLIENT_ID: string = import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? ''
 export const REDIRECT_URI = window.location.origin + import.meta.env.BASE_URL
 
@@ -17,6 +19,7 @@ const SCOPES = [
   'playlist-read-collaborative',
   'playlist-modify-private',
   'playlist-modify-public',
+  'user-library-modify', // needed to delete a kid's mix
 ].join(' ')
 
 const TOKEN_KEY = 'bopbox.token'
@@ -176,6 +179,7 @@ export class SpotifyError extends Error {
 }
 
 async function api<T = unknown>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
+  if (DEMO) return (init.method === 'POST' && path === '/me/playlists' ? { id: `demo-${Date.now()}` } : undefined) as T
   const token = await getAccessToken(retried)
   const res = await fetch(path.startsWith('http') ? path : API + path, {
     ...init,
@@ -242,28 +246,52 @@ export type PlaybackState = {
 
 export const getMe = () => api<Me>('/me')
 
-const MARKER = '[bopbox]'
+export const MARKER = '[bopbox]'
+export const MIX_MARKER = '[bopbox-mix'
 
-/** Find this app's private playlist (owned by the signed-in account), or create it. */
-export async function ensurePlaylist(me: Me, knownId: string | undefined, kidName: string) {
-  if (knownId) {
-    try {
-      const p = await api<{ id: string; owner: { id: string } }>(`/playlists/${knownId}?fields=id,owner(id)`)
-      if (p.owner.id === me.id) return p.id
-    } catch {
-      /* fall through to lookup */
-    }
-  }
+export type PlaylistInfo = {
+  id: string
+  name: string
+  description: string | null
+  images: Image[]
+  owner: { id: string; display_name?: string | null }
+  collaborative: boolean
+  total: number
+}
+
+type RawPlaylist = Omit<PlaylistInfo, 'total'> & { items?: { total: number }; tracks?: { total: number } }
+
+/** Every playlist in the signed-in account's library. */
+export async function listMyPlaylists(): Promise<PlaylistInfo[]> {
+  const out: PlaylistInfo[] = []
   let next: string | null = '/me/playlists?limit=50'
   while (next) {
-    const page: {
-      items: ({ id: string; description: string | null; owner: { id: string } } | null)[]
-      next: string | null
-    } = await api(next)
-    const hit = page.items.find((p) => p && p.owner.id === me.id && p.description?.includes(MARKER))
-    if (hit) return hit.id
+    const page: { items: (RawPlaylist | null)[]; next: string | null } = await api(next)
+    for (const p of page.items) {
+      if (!p) continue
+      out.push({
+        id: p.id,
+        name: p.name,
+        description: p.description ?? null,
+        images: p.images ?? [],
+        owner: p.owner,
+        collaborative: !!p.collaborative,
+        total: p.items?.total ?? p.tracks?.total ?? 0,
+      })
+    }
     next = page.next
   }
+  return out
+}
+
+/** Find this app's "Picked for you" playlist, or create it. */
+export async function ensurePlaylist(me: Me, all: PlaylistInfo[], knownId: string | undefined, kidName: string) {
+  const mine = all.filter((p) => p.owner.id === me.id)
+  const hit =
+    (knownId && mine.find((p) => p.id === knownId)) ||
+    mine.find((p) => p.description?.includes(MARKER) && !p.description.includes(MIX_MARKER)) ||
+    mine.find((p) => p.name.endsWith('Bop Box ✨'))
+  if (hit) return hit.id
   const created = await api<{ id: string }>('/me/playlists', {
     method: 'POST',
     body: JSON.stringify({
@@ -274,6 +302,26 @@ export async function ensurePlaylist(me: Me, knownId: string | undefined, kidNam
   })
   return created.id
 }
+
+export const mixDescription = (kidName: string, color: string, emoji: string) =>
+  `A mix ${kidName || 'a kid'} made in Bop Box. ${MIX_MARKER}:${color}:${emoji}]`
+
+export async function createPlaylist(name: string, description: string) {
+  return api<{ id: string; name: string }>('/me/playlists', {
+    method: 'POST',
+    body: JSON.stringify({ name, description, public: false }),
+  })
+}
+
+export const updatePlaylistDetails = (id: string, details: { name?: string; description?: string }) =>
+  api(`/playlists/${id}`, { method: 'PUT', body: JSON.stringify(details) })
+
+export const replacePlaylistItems = (id: string, uris: string[]) =>
+  api(`/playlists/${id}/items`, { method: 'PUT', body: JSON.stringify({ uris: uris.slice(0, 100) }) })
+
+/** Spotify "deletes" a playlist by removing it from the owner's library. */
+export const deletePlaylist = (id: string) =>
+  api(`/me/library?uris=${encodeURIComponent(`spotify:playlist:${id}`)}`, { method: 'DELETE' })
 
 type PlaylistEntry = { added_at: string; item?: Track | null; track?: Track | null }
 
@@ -295,8 +343,8 @@ export async function getPlaylistSongs(id: string): Promise<Song[]> {
 export const renamePlaylist = (id: string, kidName: string) =>
   api(`/playlists/${id}`, { method: 'PUT', body: JSON.stringify({ name: `${kidName}'s Bop Box ✨` }) })
 
-export const addToPlaylist = (id: string, uris: string[]) =>
-  api(`/playlists/${id}/items`, { method: 'POST', body: JSON.stringify({ uris, position: 0 }) })
+export const addToPlaylist = (id: string, uris: string[], atTop = true) =>
+  api(`/playlists/${id}/items`, { method: 'POST', body: JSON.stringify(atTop ? { uris, position: 0 } : { uris }) })
 
 export const removeFromPlaylist = (id: string, uris: string[]) =>
   api(`/playlists/${id}/items`, {
