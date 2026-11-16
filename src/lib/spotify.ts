@@ -267,6 +267,35 @@ async function refresh(acct: Acct, key: string, retried = false): Promise<string
   return j.access_token
 }
 
+/** Access tokens for every Spotify account signed in on this device (the shared one and kids' own). */
+export async function accountTokensOnDevice(): Promise<string[]> {
+  let keys: string[] = []
+  try {
+    keys = Object.keys(localStorage).filter((k) => k === DEVICE_KEY || k.startsWith(KID_PREFIX))
+  } catch {
+    return []
+  }
+  const out: string[] = []
+  for (const key of keys) {
+    const t = readToken('main', key)
+    if (!t) continue
+    if (Date.now() < t.expires) out.push(t.access)
+    else {
+      refreshing[key] ??= refresh('main', key).finally(() => delete refreshing[key])
+      await refreshing[key]!.then((a) => out.push(a), () => {})
+    }
+  }
+  return out
+}
+
+/** The grown-up's sign-in, to hand to the family connection on the server. */
+export async function grownupSignIn(): Promise<{ access: string; refresh: string } | null> {
+  if (!readToken('grownup')) return null
+  const access = await getAccessToken(false, 'grownup')
+  const t = readToken('grownup')
+  return t ? { access, refresh: t.refresh } : null
+}
+
 export async function getAccessToken(force = false, acct: Acct = 'main'): Promise<string> {
   const key = keyFor(acct)
   const t = readToken(acct, key)
@@ -470,8 +499,8 @@ export async function createPlaylist(name: string, description: string) {
   })
 }
 
-export const updatePlaylistDetails = (id: string, details: { name?: string; description?: string }) =>
-  api(`/playlists/${id}`, { method: 'PUT', body: JSON.stringify(details) })
+export const updatePlaylistDetails = (id: string, details: { name?: string; description?: string }, acct: Acct = 'main') =>
+  api(`/playlists/${id}`, { method: 'PUT', body: JSON.stringify(details), acct })
 
 export const replacePlaylistItems = (id: string, uris: string[]) =>
   api(`/playlists/${id}/items`, { method: 'PUT', body: JSON.stringify({ uris: uris.slice(0, 100) }) })

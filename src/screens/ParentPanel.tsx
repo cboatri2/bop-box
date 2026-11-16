@@ -7,7 +7,6 @@ import {
   art,
   artistNames,
   beginLogin,
-  disconnectGrownup,
   kidHasOwnAccount,
   deviceSignedIn,
   isGrownupConnected,
@@ -30,6 +29,7 @@ import { Mascot } from '../components/Mascot'
 import { toast } from '../lib/toast'
 import { seasonOn } from '../lib/season'
 import { lastSyncedAt, syncAvailable } from '../lib/sync'
+import { disconnectFamilyGrownup, familyLinked } from '../lib/family'
 import { BuddyPicker } from './Setup'
 
 type Tab = 'playlists' | 'add' | 'list' | 'wishes' | 'settings'
@@ -210,9 +210,8 @@ function ApprovedPlaylists({
                 <button
                   className="btn-danger"
                   onClick={() => {
-                    disconnectGrownup()
                     setConfirmOff(false)
-                    onChange()
+                    void disconnectFamilyGrownup().then(onChange)
                   }}
                 >
                   Disconnect
@@ -238,8 +237,8 @@ function ApprovedPlaylists({
           <div>
             <b>Use playlists from your own Spotify</b>
             <p>
-              Already have playlists for the kids in another account? Connect it once on this device. Bop Box can
-              only <em>read</em> its playlists. It can't play, change or delete anything there.
+              Already have playlists for the kids in another account? Connect it once, and every kid's phone or iPad
+              can use them. Bop Box can only <em>read</em> its playlists. It can't play, change or delete anything there.
             </p>
             <button className="btn-candy" onClick={() => void beginLogin('grownup')}>
               Connect a grown-up's Spotify
@@ -594,6 +593,17 @@ function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: stri
 
   return (
     <section className="settings">
+      {onIosInSafari() && (
+        <div className="set-card tip-card">
+          <h3>📲 Keep Bop Box signed in</h3>
+          <p className="muted">
+            Safari can clear a website's sign-ins, but never a Home Screen app's. Tap Share, then{' '}
+            <b>Add to Home Screen</b>, and open Bop Box from there. You'll sign in to Spotify once more in the new
+            icon, and everything you set up comes back by itself.
+          </p>
+        </div>
+      )}
+
       <p className="eyebrow">Just for {s.kidName}</p>
 
       <div className="set-card">
@@ -792,7 +802,10 @@ function Troubleshooting() {
                 {k.kidName}: <b>{k.ownAccount || kidHasOwnAccount(k.id) ? (kidHasOwnAccount(k.id) ? 'own account, signed in' : 'own account, NOT signed in') : 'uses shared account'}</b>
               </li>
             ))}
-            <li>Grown-up playlists: <b>{isGrownupConnected() ? 'connected' : 'not connected'}</b></li>
+            <li>
+              Grown-up playlists:{' '}
+              <b>{isGrownupConnected() ? 'connected on this device only' : familyLinked() ? 'connected for the whole family' : 'not connected'}</b>
+            </li>
             <li>
               Settings sync between devices:{' '}
               <b>
@@ -837,4 +850,11 @@ function Toggle({ label, hint, on, onChange }: { label: string; hint?: string; o
       </button>
     </div>
   )
+}
+
+/** On an iPhone or iPad, in Safari rather than the Home Screen app. */
+function onIosInSafari() {
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  const standalone = (navigator as { standalone?: boolean }).standalone || matchMedia('(display-mode: standalone)').matches
+  return ios && !standalone
 }

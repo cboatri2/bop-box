@@ -46,7 +46,7 @@ export function demoLibrary(approved: string[], firstKid = true): Library {
     pl('mine', 'Dad’s Workout Mix', 40, 5), pl('other', 'Today’s Top Hits', 50, 2, 'spotify'),
   ]
   const grownupLists = [pl('mom1', 'Kids Jams', 7, 8, 'mom'), pl('mom2', 'Road Trip 🚙', 5, 13, 'mom'), pl('mom3', 'Lullabies', 4, 7, 'mom')]
-  const grownup = isGrownupConnected() ? { me: { id: 'mom', display_name: 'Mom' }, playlists: grownupLists } : null
+  const grownup = isGrownupConnected() ? { me: { id: 'mom', display_name: 'Mom' }, playlists: grownupLists, via: 'device' as const } : null
   const shelfSongs: Record<string, Song[]> = {
     car: demoSongs.slice(4, 10), disney: demoSongs.slice(9, 14), bed: demoSongs.slice(11, 16),
     mom1: demoSongs.slice(0, 7), mom2: demoSongs.slice(6, 11), mom3: demoSongs.slice(12, 16),

@@ -3,6 +3,7 @@ import type { Image, Me, PlaylistInfo, Song } from './spotify'
 import { getSettings, updateSettings, type ThemeName } from './store'
 import { logEvent } from './log'
 import { toast } from './toast'
+import { familyAvailable, familyGrownup, familyGrownupSongs, shareGrownupWithFamily } from './family'
 
 // One kid's music library:
 //   • "Picked for you": the kid's own Bop Box playlist that songs get added to one at a time
@@ -19,7 +20,8 @@ export type Library = {
   mixes: Mix[]
   playlists: PlaylistInfo[] // everything in the account, for the grown-up picker
   boxes: KidBox[] // every kid's Bop Box in this account (to link kids on another device)
-  grownup: { me: Me; playlists: PlaylistInfo[] } | null // read-only grown-up connection, if any
+  /** Read-only grown-up connection, if any: held on this device, or shared by the family via the server. */
+  grownup: { me: Me; playlists: PlaylistInfo[]; via: 'device' | 'family' } | null
 }
 
 const MIX_RE = /\[bopbox-mix:(\w+):([^\]:]+)(?::(\w+))?\]/
@@ -71,7 +73,8 @@ export async function loadLibrary(me: Me): Promise<Library> {
   })
   if (getSettings().kidId !== st.kidId) throw new StaleLoad()
   if (pickedId !== st.playlistId) updateSettings({ playlistId: pickedId })
-  if (created) await bringSongsAlong(me, pickedId, st.kidName)
+  // A new (or still empty) box in a kid's own account: bring their songs over from the shared account.
+  if (created || playlists.find((p) => p.id === pickedId)?.total === 0) await bringSongsAlong(me, pickedId, st.kidName)
 
   // Approved playlists can come from this account or the connected grown-up's account.
   const approved = new Set(st.approvedPlaylists)
@@ -102,7 +105,7 @@ export async function loadLibrary(me: Me): Promise<Library> {
   // A few playlists at a time, so a big library doesn't trip Spotify's rate limit.
   const pickedSongs = await sp.getPlaylistSongs(pickedId)
   const shelfSongs = await inBatches(shelfInfos, ({ p, acct }) =>
-    sp.getPlaylistSongs(p.id, acct).catch((e) => {
+    (acct === 'grownup' && grownup?.via === 'family' ? familyGrownupSongs(p.id) : sp.getPlaylistSongs(p.id, acct)).catch((e) => {
       logEvent(`Couldn't read the "${p.name}" shelf (${why(e)})`)
       return [] as Song[]
     }),
@@ -143,6 +146,8 @@ async function bringSongsAlong(me: Me, newId: string, kidName: string) {
     const uris = (await sp.getPlaylistSongs(old.id, 'device')).map((x) => x.uri)
     for (let i = 0; i < uris.length; i += 100) await sp.addToPlaylist(newId, uris.slice(i, i + 100), false)
     logEvent(`Copied ${uris.length} songs into ${kidName}'s own account`)
+    // Rename the old box so it's never mistaken for theirs again (it keeps its Bop Box tag, so it stays hidden).
+    await sp.updatePlaylistDetails(old.id, { name: `${kidName}'s old Bop Box ✨` }, 'device').catch(() => {})
     if (uris.length) toast(`Brought ${kidName}'s ${uris.length} songs over to their own account.`, '🎁')
   } catch (e) {
     logEvent(`Couldn't copy ${kidName}'s songs from the shared account (${why(e)})`)
@@ -151,10 +156,15 @@ async function bringSongsAlong(me: Me, newId: string, kidName: string) {
 
 /** The connected grown-up's own playlists (only ones Spotify lets us read: theirs or collaborative). */
 async function loadGrownup(): Promise<Library['grownup']> {
-  if (!sp.isGrownupConnected()) return null
+  // A connection made on this device before the family connection existed: share it (kept here if that fails).
+  if (sp.isGrownupConnected() && familyAvailable()) await shareGrownupWithFamily()
+  if (!sp.isGrownupConnected()) {
+    const fam = await familyGrownup()
+    return fam && { me: { id: fam.me.id, display_name: fam.me.display_name }, playlists: fam.playlists, via: 'family' }
+  }
   try {
     const [me, all] = await Promise.all([sp.getMe('grownup'), sp.listMyPlaylists('grownup')])
-    return { me, playlists: all.filter((p) => p.owner.id === me.id || p.collaborative) }
+    return { me, playlists: all.filter((p) => p.owner.id === me.id || p.collaborative), via: 'device' }
   } catch (e) {
     logEvent(`Couldn't read the grown-up's playlists (${why(e)})`)
     if (e instanceof sp.AuthError) sp.disconnectGrownup()

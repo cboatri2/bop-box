@@ -1,4 +1,4 @@
-import { DEMO } from './demo-flag'
+import { API_BASE } from './api'
 import { logEvent } from './log'
 import { getAccessToken, type Acct } from './spotify'
 import {
@@ -17,11 +17,7 @@ import { SYNCED_KID_FIELDS, type KidDoc, type SyncDoc, type SyncedKidField } fro
 // Each kid's settings live with the Spotify account their music box is in, so a device sees a kid's
 // settings only once it's signed in to that account. See api/sync.ts for the server side.
 
-const URL_ =
-  DEMO || (import.meta.env.DEV && !import.meta.env.VITE_SYNC_URL)
-    ? null // local development never touches the family's real settings unless asked to
-    : (import.meta.env.VITE_SYNC_URL as string | undefined) ??
-      (location.hostname.endsWith('github.io') ? 'https://bop-box.vercel.app/api/sync' : '/api/sync')
+const URL_ = API_BASE && `${API_BASE}/sync`
 
 export const syncAvailable = () => URL_ !== null
 

@@ -36,6 +36,7 @@ import { DEMO } from './lib/demo-flag'
 import { logEvent } from './lib/log'
 import { useSeason } from './lib/season'
 import { importExistingSetup, startAutoSync, syncActiveKid } from './lib/sync'
+import { shareGrownupWithFamily } from './lib/family'
 import { KidHome } from './screens/KidHome'
 import { NowPlaying, SpeakerSheet } from './screens/NowPlaying'
 import { ParentPanel } from './screens/ParentPanel'
@@ -46,6 +47,7 @@ import { WhoIsListening } from './screens/WhoIsListening'
 export default function App() {
   const [boot, setBoot] = useState<'loading' | 'out' | 'in'>('loading')
   useTheme()
+  useAutoUpdate()
 
   useEffect(() => {
     if (DEMO) {
@@ -57,7 +59,12 @@ export default function App() {
       .then(({ error, acct, kidId }) => {
         if (error) toast(error, '😕')
         // A grown-up just connected their playlists from inside the grown-up corner: go back there.
-        else if (acct === 'grownup') sessionStorage.setItem('bopbox.justConnected', '1')
+        else if (acct === 'grownup') {
+          sessionStorage.setItem('bopbox.justConnected', '1')
+          return shareGrownupWithFamily().then((name) => {
+            if (name) toast(`${name}'s playlists are connected for every kid's device!`, '🎉')
+          })
+        }
         // A kid was just signed in with their own Spotify (from "Add a kid" or Settings).
         else if (kidId) {
           setActiveKid(kidId)
@@ -618,4 +625,35 @@ function FirstRun({ onDone }: { onDone: () => void }) {
     )
   }
   return <Setup onDone={onDone} />
+}
+
+/**
+ * Every device runs the newest Bop Box: when it comes back on screen (and every 15 minutes), check
+ * whether a newer version is out and reload into it, but never in the middle of a song.
+ */
+function useAutoUpdate() {
+  useEffect(() => {
+    if (import.meta.env.DEV) return
+    const current = document.querySelector<HTMLScriptElement>('script[type="module"][src*="/assets/index-"]')?.src
+    if (!current) return
+    const check = async () => {
+      if (document.hidden || !getPlayer().paused) return
+      try {
+        const html = await fetch(import.meta.env.BASE_URL, { cache: 'no-store' }).then((r) => r.text())
+        const latest = html.match(/\/assets\/index-[\w-]+\.js/)?.[0]
+        if (!latest || current.endsWith(latest) || !getPlayer().paused) return
+        logEvent('Updated to the newest version of Bop Box')
+        window.location.reload()
+      } catch {
+        /* offline: try again later */
+      }
+    }
+    const onVis = () => void check()
+    document.addEventListener('visibilitychange', onVis)
+    const t = setInterval(onVis, 15 * 60 * 1000)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      clearInterval(t)
+    }
+  }, [])
 }
