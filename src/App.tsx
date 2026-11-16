@@ -121,7 +121,28 @@ function Main() {
   const busy = useRef(false)
   const edits = useRef(0) // bumped by every mix change, so a refresh that started earlier can't undo it
   // With several kids on one device, start by asking who's listening.
-  const [picking, setPicking] = useState(() => getSettings().kids.length > 1)
+  const [picking, setPicking] = useState(() => getSettings().kids.length > 1 && awayLongEnough())
+
+  // Remember when Bop Box was last in use, so a quick refresh doesn't ask "who's listening?" again.
+  useEffect(() => {
+    const mark = () => {
+      try {
+        localStorage.setItem(LAST_SEEN_KEY, String(Date.now()))
+      } catch {
+        /* ignore */
+      }
+    }
+    mark()
+    const t = setInterval(mark, 30000)
+    const onHide = () => document.hidden && mark()
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', mark)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', mark)
+    }
+  }, [])
   const [gateNext, setGateNext] = useState<'parent' | 'add-kid'>('parent')
 
   // Returning from connecting a grown-up's playlists: reopen the grown-up corner (that flow started there).
@@ -478,6 +499,19 @@ function Main() {
       </AnimatePresence>
     </>
   )
+}
+
+const LAST_SEEN_KEY = 'bopbox.lastSeen'
+const ASK_AGAIN_AFTER = 30 * 60 * 1000
+
+/** Ask "who's listening?" only when Bop Box has been closed for a while (not on a quick refresh). */
+function awayLongEnough() {
+  try {
+    const last = Number(localStorage.getItem(LAST_SEEN_KEY) ?? 0)
+    return Date.now() - last > ASK_AGAIN_AFTER
+  } catch {
+    return true
+  }
 }
 
 function ForgotPin() {
