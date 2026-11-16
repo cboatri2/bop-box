@@ -5,7 +5,7 @@ import { Mascot } from '../components/Mascot'
 import { Burst, buzz, Equalizer, Icon, Sheet, useTick } from '../components/ui'
 import { livePosition, playSongs, skip, togglePlay, usePlayer } from '../lib/player'
 import type { Mix, Shelf } from '../lib/library'
-import { art, artistNames, type Song } from '../lib/spotify'
+import { art, artistNames, playlistCooldownUntil, type Song } from '../lib/spotify'
 import { toggleFavorite, updateSettings, useSettings } from '../lib/store'
 import { toast } from '../lib/toast'
 import { useSeason, type Season } from '../lib/season'
@@ -206,6 +206,16 @@ export function KidHome({ songs, shelves, mixes, mixOps, loading, onOpenPlayer, 
         </div>
       ) : mix && moving ? (
         <ReorderList mix={mix} onReorder={(list) => void mixOps.reorder(mix.id, list)} onRemove={(uri) => void mixOps.removeSong(mix.id, uri)} />
+      ) : shown.length === 0 && songs.length === 0 && playlistCooldownUntil() > Date.now() ? (
+        <div className="empty">
+          <Mascot size={130} mood="sleepy" accessory={s.accessory} />
+          <h2 className="h2">Bop Box is taking a little nap</h2>
+          <p className="muted">
+            Spotify asked it to rest until{' '}
+            {new Date(playlistCooldownUntil()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Your songs
+            are safe and will be back then!
+          </p>
+        </div>
       ) : shown.length === 0 ? (
         <div className="empty">
           <Mascot size={130} mood="wow" accessory={s.accessory} />
