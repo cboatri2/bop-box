@@ -146,7 +146,25 @@ export function initPlayer(cap: number) {
     if (state.sdk === 'loading') set({ sdk: 'unsupported' })
   }, 12000)
 
-  window.onSpotifyWebPlaybackSDKReady = () => {
+  window.onSpotifyWebPlaybackSDKReady = () => createSdk(timeout)
+
+  const script = document.createElement('script')
+  script.src = 'https://sdk.scdn.co/spotify-player.js'
+  script.async = true
+  script.onerror = () => set({ sdk: 'unsupported' })
+  document.body.appendChild(script)
+
+  // Speakers (Spotify Connect) don't push events, so poll while visible.
+  setInterval(() => {
+    if (document.hidden || !state.deviceId || state.deviceId === state.sdkDeviceId) return
+    void pollRemote()
+  }, 3000)
+
+  // Sleep timer
+  setInterval(tickSleep, 500)
+}
+
+function createSdk(timeout?: ReturnType<typeof setTimeout>) {
     if (!window.Spotify) return
     sdk = new window.Spotify.Player({
       name: 'Bop Box',
@@ -156,7 +174,7 @@ export function initPlayer(cap: number) {
       volume: state.volume * maxVolume,
     })
     sdk.addListener('ready', ({ device_id }: { device_id: string }) => {
-      clearTimeout(timeout)
+      if (timeout) clearTimeout(timeout)
       set({
         sdk: 'ready',
         sdkDeviceId: device_id,
@@ -168,15 +186,15 @@ export function initPlayer(cap: number) {
       // device went offline; it'll reconnect itself
     })
     sdk.addListener('initialization_error', () => {
-      clearTimeout(timeout)
+      if (timeout) clearTimeout(timeout)
       set({ sdk: 'unsupported' })
     })
     sdk.addListener('authentication_error', () => {
-      clearTimeout(timeout)
+      if (timeout) clearTimeout(timeout)
       set({ sdk: 'unsupported' })
     })
     sdk.addListener('account_error', () => {
-      clearTimeout(timeout)
+      if (timeout) clearTimeout(timeout)
       set({ sdk: 'premium-needed' })
     })
     sdk.addListener('autoplay_failed', () => {
@@ -203,20 +221,18 @@ export function initPlayer(cap: number) {
     })
   }
 
-  const script = document.createElement('script')
-  script.src = 'https://sdk.scdn.co/spotify-player.js'
-  script.async = true
-  script.onerror = () => set({ sdk: 'unsupported' })
-  document.body.appendChild(script)
-
-  // Speakers (Spotify Connect) don't push events, so poll while visible.
-  setInterval(() => {
-    if (document.hidden || !state.deviceId || state.deviceId === state.sdkDeviceId) return
-    void pollRemote()
-  }, 3000)
-
-  // Sleep timer
-  setInterval(tickSleep, 500)
+/** A different kid (maybe a different Spotify account) is listening now: reconnect the in-page player. */
+export function restartPlayer() {
+  if (DEMO || !started) return
+  ownsRemote = false
+  try {
+    sdk?.disconnect()
+  } catch {
+    /* ignore */
+  }
+  sdk = null
+  set({ sdk: 'loading', sdkDeviceId: null, deviceId: null, deviceName: 'This device', track: null, paused: true })
+  if (window.Spotify) createSdk()
 }
 
 async function pollRemote() {

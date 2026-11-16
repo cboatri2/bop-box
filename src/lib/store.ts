@@ -20,6 +20,7 @@ export type Kid = {
   hideExplicit: boolean
   maxVolume: number // 0–100, caps the volume slider
   playlistId?: string // this kid's "Picked for you" playlist in Spotify
+  ownAccount?: boolean // signs in with their own Spotify account instead of the device's
   approvedPlaylists: string[] // grown-up playlists this kid may play
   favorites: string[] // track uris
   wishes: Wish[]
@@ -37,7 +38,7 @@ type Device = {
 export type Settings = Device & Omit<Kid, 'id'> & { kidId: string | null }
 
 const KID_KEYS = new Set<keyof Kid>([
-  'kidName', 'theme', 'accessory', 'hideExplicit', 'maxVolume', 'playlistId', 'approvedPlaylists', 'favorites', 'wishes',
+  'kidName', 'theme', 'accessory', 'hideExplicit', 'maxVolume', 'playlistId', 'ownAccount', 'approvedPlaylists', 'favorites', 'wishes',
 ])
 
 const KEY = DEMO ? 'bopbox.settings.demo' : 'bopbox.settings'

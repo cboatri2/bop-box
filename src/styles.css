@@ -2606,3 +2606,34 @@ code {
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
+
+.account-choices {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+.account-choices .btn-candy {
+  white-space: normal;
+}
+
+/* Phones: stack the connect card so nothing runs off the edge */
+.connect-card > div {
+  min-width: 0;
+}
+.connect-card .btn-candy {
+  white-space: normal;
+  text-align: center;
+}
+@media (max-width: 560px) {
+  .connect-card {
+    flex-direction: column;
+  }
+  .connect-card .btn-candy {
+    width: 100%;
+  }
+  .parent-head .btn-candy {
+    width: 100%;
+  }
+}

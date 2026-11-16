@@ -4,10 +4,11 @@ import { Mascot } from './components/Mascot'
 import { PinPad } from './components/PinPad'
 import { Backdrop, Icon, Sheet, Toasts } from './components/ui'
 import { allowedSongs, keepAllowed, loadLibrary, type Library, type Mix } from './lib/library'
-import { getPlayer, initPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
+import { getPlayer, initPlayer, restartPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
 import {
   addToPlaylist,
   AuthError,
+  beginLogin,
   completeLoginFromUrl,
   createPlaylist,
   deletePlaylist,
@@ -45,10 +46,17 @@ export default function App() {
       return
     }
     completeLoginFromUrl()
-      .then(({ error, acct }) => {
+      .then(({ error, acct, kidId }) => {
         if (error) toast(error, '😕')
         // A grown-up just connected their playlists from inside the grown-up corner: go back there.
         else if (acct === 'grownup') sessionStorage.setItem('bopbox.justConnected', '1')
+        // A kid was just signed in with their own Spotify (from "Add a kid" or Settings).
+        else if (kidId) {
+          setActiveKid(kidId)
+          updateSettings({ ownAccount: true })
+          sessionStorage.setItem('bopbox.justConnected', '1')
+          toast(`${getSettings().kidName} is signed in to Spotify!`, '🎉')
+        }
       })
       .catch(() => toast('Spotify sign-in failed. Please try again.', '😕'))
       .finally(() => setBoot(isLoggedIn() ? 'in' : 'out'))
@@ -117,6 +125,8 @@ function Main() {
     }
   }, [])
   const prevKid = useRef<string | null>(null)
+  const lastKid = useRef<string | null>(null)
+  const [needsLogin, setNeedsLogin] = useState(false)
 
   useEffect(() => initPlayer(getSettings().maxVolume), [])
 
@@ -156,7 +166,12 @@ function Main() {
       const next = await loadLibrary(m)
       if (getSettings().kidId === kidAtStart) setLib(next) // ignore a load for a kid we've switched away from
     } catch (e) {
-      if (e instanceof AuthError) {
+      if (e instanceof AuthError && e.acct === 'main') {
+        // A kid with their own account needs that account signed in again; never fall back to another.
+        if (getSettings().ownAccount) {
+          setNeedsLogin(true)
+          return
+        }
         logout()
         window.location.reload()
         return
@@ -172,6 +187,11 @@ function Main() {
   useEffect(() => {
     if (!s.setupDone || !s.kidId) return
     if (!getPlayer().paused) void togglePlay()
+    // Different kid, maybe a different Spotify account: forget who "me" is and reconnect the player.
+    if (lastKid.current && lastKid.current !== s.kidId) restartPlayer()
+    lastKid.current = s.kidId
+    meRef.current = null
+    setNeedsLogin(false)
     setMaxVolume(getSettings().maxVolume)
     setLib(null)
     setLoading(true)
@@ -300,6 +320,26 @@ function Main() {
           setView('parent')
         }}
       />
+    )
+  }
+
+  if (needsLogin && view === 'kid') {
+    return (
+      <main className="center-screen">
+        <div className="card setup-card">
+          <Mascot size={130} mood="sleepy" accessory={s.accessory} />
+          <h1 className="h1">{s.kidName} needs to sign in again</h1>
+          <p className="muted">Spotify signed {s.kidName}'s account out. A grown-up can sign it back in.</p>
+          <button className="btn-candy btn-lg" onClick={() => s.kidId && void beginLogin('main', s.kidId)}>
+            Sign in with {s.kidName}'s Spotify
+          </button>
+          {s.kids.length > 1 && (
+            <button className="link-btn" onClick={() => setPicking(true)}>
+              Switch who's listening
+            </button>
+          )}
+        </div>
+      </main>
     )
   }
 

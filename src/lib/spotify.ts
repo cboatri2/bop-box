@@ -5,6 +5,7 @@
 //   • the app owner must have Premium
 
 import { DEMO } from './demo-flag'
+import { getSettings } from './store'
 
 export const CLIENT_ID: string = import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? ''
 export const REDIRECT_URI = window.location.origin + import.meta.env.BASE_URL
@@ -29,43 +30,76 @@ const GROWNUP_SCOPES = 'playlist-read-private playlist-read-collaborative'
 /** 'main' = the account this device plays music with. 'grownup' = a read-only grown-up connection. */
 export type Acct = 'main' | 'grownup'
 
-const TOKEN_KEYS: Record<Acct, string> = { main: 'bopbox.token', grownup: 'bopbox.token.grownup' }
+// 'main' resolves to the active kid's own Spotify login if they have one, otherwise the device's login.
+const DEVICE_KEY = 'bopbox.token'
+const GROWNUP_KEY = 'bopbox.token.grownup'
+const KID_PREFIX = 'bopbox.token.kid.'
 const VERIFIER_KEY = 'bopbox.pkce'
+
+const has = (key: string) => {
+  try {
+    return localStorage.getItem(key) !== null
+  } catch {
+    return false
+  }
+}
+
+function keyFor(acct: Acct) {
+  if (acct === 'grownup') return GROWNUP_KEY
+  const s = getSettings()
+  // A kid with their own account never silently falls back to the device's account.
+  return s.kidId && (s.ownAccount || has(KID_PREFIX + s.kidId)) ? KID_PREFIX + s.kidId : DEVICE_KEY
+}
+
+/** True when this kid signs in with their own Spotify account (not the device's shared one). */
+export const kidHasOwnAccount = (kidId: string | null) => !!kidId && has(KID_PREFIX + kidId)
+
+export function forgetKidAccount(kidId: string) {
+  try {
+    localStorage.removeItem(KID_PREFIX + kidId)
+  } catch {
+    /* ignore */
+  }
+}
 const API = 'https://api.spotify.com/v1'
 
 type Token = { access: string; refresh: string; expires: number }
 
 // ── token storage ───────────────────────────────────────────────────────────
 
-function readToken(acct: Acct = 'main'): Token | null {
+function readToken(acct: Acct = 'main', key = keyFor(acct)): Token | null {
   try {
-    const raw = localStorage.getItem(TOKEN_KEYS[acct])
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as Token) : null
   } catch {
     return null
   }
 }
 
-function writeToken(t: Token | null, acct: Acct = 'main') {
+function writeToken(t: Token | null, key: string) {
   try {
-    if (t) localStorage.setItem(TOKEN_KEYS[acct], JSON.stringify(t))
-    else localStorage.removeItem(TOKEN_KEYS[acct])
+    if (t) localStorage.setItem(key, JSON.stringify(t))
+    else localStorage.removeItem(key)
   } catch {
     /* storage unavailable */
   }
 }
 
-export const isLoggedIn = () => readToken('main') !== null
+export const isLoggedIn = () => readToken('main') !== null || has(DEVICE_KEY)
 export const isGrownupConnected = () => (DEMO ? demoGrownup() : readToken('grownup') !== null)
 
+/** Signs every account out of this device. */
 export function logout() {
-  writeToken(null, 'main')
-  writeToken(null, 'grownup')
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('bopbox.token')) localStorage.removeItem(k)
+  } catch {
+    /* ignore */
+  }
 }
 
 export function disconnectGrownup() {
   if (DEMO) localStorage.removeItem('bopbox.demo.grownup')
-  writeToken(null, 'grownup')
+  writeToken(null, GROWNUP_KEY)
 }
 
 const demoGrownup = () => {
@@ -84,9 +118,19 @@ function base64url(bytes: Uint8Array) {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-export async function beginLogin(acct: Acct = 'main') {
+/**
+ * Start Spotify sign-in. `kidId` signs that kid in with their *own* account.
+ * Grown-up and kid sign-ins always show Spotify's "Not you?" so a different account can be chosen.
+ */
+export async function beginLogin(acct: Acct = 'main', kidId?: string) {
   if (DEMO && acct === 'grownup') {
     localStorage.setItem('bopbox.demo.grownup', '1')
+    sessionStorage.setItem('bopbox.justConnected', '1')
+    window.location.reload()
+    return
+  }
+  if (DEMO && kidId) {
+    localStorage.setItem(KID_PREFIX + kidId, JSON.stringify({ access: 'demo', refresh: 'demo', expires: Date.now() + 3.6e6 }))
     sessionStorage.setItem('bopbox.justConnected', '1')
     window.location.reload()
     return
@@ -96,7 +140,7 @@ export async function beginLogin(acct: Acct = 'main') {
     new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))),
   )
   const state = base64url(crypto.getRandomValues(new Uint8Array(12)))
-  localStorage.setItem(VERIFIER_KEY, JSON.stringify({ verifier, state, acct }))
+  localStorage.setItem(VERIFIER_KEY, JSON.stringify({ verifier, state, acct, kidId }))
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: CLIENT_ID,
@@ -106,7 +150,7 @@ export async function beginLogin(acct: Acct = 'main') {
     code_challenge: challenge,
     state,
     // On a kid's device Spotify remembers the kid's login; this lets the grown-up switch accounts.
-    ...(acct === 'grownup' ? { show_dialog: 'true' } : {}),
+    ...(acct === 'grownup' || kidId ? { show_dialog: 'true' } : {}),
   })
   window.location.assign(`https://accounts.spotify.com/authorize?${params}`)
 }
@@ -115,7 +159,7 @@ export async function beginLogin(acct: Acct = 'main') {
  * If the URL carries ?code=… from Spotify, trade it for tokens.
  * Returns an error message (or null) and which account just signed in.
  */
-export async function completeLoginFromUrl(): Promise<{ error: string | null; acct: Acct | null }> {
+export async function completeLoginFromUrl(): Promise<{ error: string | null; acct: Acct | null; kidId?: string }> {
   const url = new URL(window.location.href)
   const code = url.searchParams.get('code')
   const err = url.searchParams.get('error')
@@ -128,9 +172,11 @@ export async function completeLoginFromUrl(): Promise<{ error: string | null; ac
     verifier: string
     state: string
     acct?: Acct
+    kidId?: string
   } | null
   localStorage.removeItem(VERIFIER_KEY)
   const acct = saved?.acct ?? 'main'
+  const kidId = saved?.kidId
 
   if (err) return { error: err === 'access_denied' ? 'Spotify sign-in was cancelled.' : `Spotify said: ${err}`, acct }
   if (!saved || saved.state !== url.searchParams.get('state')) {
@@ -150,14 +196,15 @@ export async function completeLoginFromUrl(): Promise<{ error: string | null; ac
   })
   if (!res.ok) return { error: 'Spotify sign-in failed. Please try again.', acct }
   const j = await res.json()
-  writeToken({ access: j.access_token, refresh: j.refresh_token, expires: Date.now() + (j.expires_in - 60) * 1000 }, acct)
-  return { error: null, acct }
+  const key = acct === 'grownup' ? GROWNUP_KEY : kidId ? KID_PREFIX + kidId : DEVICE_KEY
+  writeToken({ access: j.access_token, refresh: j.refresh_token, expires: Date.now() + (j.expires_in - 60) * 1000 }, key)
+  return { error: null, acct, kidId }
 }
 
-const refreshing: Partial<Record<Acct, Promise<string>>> = {}
+const refreshing: Record<string, Promise<string> | undefined> = {}
 
-async function refresh(acct: Acct): Promise<string> {
-  const t = readToken(acct)
+async function refresh(acct: Acct, key: string): Promise<string> {
+  const t = readToken(acct, key)
   if (!t) throw new AuthError(acct)
   const res = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
@@ -170,7 +217,7 @@ async function refresh(acct: Acct): Promise<string> {
   })
   if (!res.ok) {
     if (res.status === 400 || res.status === 401) {
-      writeToken(null, acct)
+      writeToken(null, key)
       throw new AuthError(acct)
     }
     throw new Error('Could not reach Spotify')
@@ -178,17 +225,18 @@ async function refresh(acct: Acct): Promise<string> {
   const j = await res.json()
   writeToken(
     { access: j.access_token, refresh: j.refresh_token ?? t.refresh, expires: Date.now() + (j.expires_in - 60) * 1000 },
-    acct,
+    key,
   )
   return j.access_token
 }
 
 export async function getAccessToken(force = false, acct: Acct = 'main'): Promise<string> {
-  const t = readToken(acct)
+  const key = keyFor(acct)
+  const t = readToken(acct, key)
   if (!t) throw new AuthError(acct)
   if (!force && Date.now() < t.expires) return t.access
-  refreshing[acct] ??= refresh(acct).finally(() => delete refreshing[acct])
-  return refreshing[acct]!
+  refreshing[key] ??= refresh(acct, key).finally(() => delete refreshing[key])
+  return refreshing[key]!
 }
 
 // ── fetch wrapper ───────────────────────────────────────────────────────────

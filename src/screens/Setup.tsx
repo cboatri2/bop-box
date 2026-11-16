@@ -4,6 +4,7 @@ import { Mascot } from '../components/Mascot'
 import { PinPad } from '../components/PinPad'
 import { Icon } from '../components/ui'
 import type { KidBox } from '../lib/library'
+import { beginLogin } from '../lib/spotify'
 import { hashPin, updateSettings, useSettings, type Accessory, type ThemeName } from '../lib/store'
 
 export const THEMES: { id: ThemeName; label: string; color: string }[] = [
@@ -145,7 +146,7 @@ export function Setup({ onDone, mode = 'first', existing = [], onCancel }: Setup
       <h1 className="h1">Pick a music buddy</h1>
       <p className="muted">Choose together! You can change this any time.</p>
       <BuddyPicker />
-      <button className="btn-candy btn-lg" onClick={() => (mode === 'add' ? onDone() : setStep(2))}>
+      <button className="btn-candy btn-lg" onClick={() => setStep(2)}>
         Love it!
       </button>
     </div>,
@@ -160,7 +161,36 @@ export function Setup({ onDone, mode = 'first', existing = [], onCancel }: Setup
     </div>,
   ]
 
-  if (mode === 'add') steps.pop()
+  // Adding another kid: instead of a PIN, pick which Spotify account they listen with.
+  if (mode === 'add') {
+    steps[2] = (
+      <div key="account" className="setup-step">
+        <Mascot size={120} accessory={s.accessory} mood="wow" />
+        <h1 className="h1">Whose Spotify?</h1>
+        <p className="muted">
+          Does {s.kidName} have their own Spotify account? Then they can listen at the same time as everyone else.
+        </p>
+        <div className="account-choices">
+          <button className="btn-candy btn-lg" onClick={() => s.kidId && void beginLogin('main', s.kidId)}>
+            Sign in with {s.kidName}'s Spotify
+          </button>
+          <button
+            className="btn-soft"
+            onClick={() => {
+              updateSettings({ ownAccount: false })
+              onDone()
+            }}
+          >
+            Share this device's account
+          </button>
+        </div>
+        <p className="fineprint">
+          On Spotify's screen, tap “Not you?” to switch accounts. The account must be added in Bop Box's Spotify
+          developer settings first.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <main className="center-screen">

@@ -8,6 +8,7 @@ import {
   artistNames,
   beginLogin,
   disconnectGrownup,
+  kidHasOwnAccount,
   getAlbumTracks,
   getPlaylistSongs,
   getTrack,
@@ -581,10 +582,30 @@ function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: stri
   const [first, setFirst] = useState<string | null>(null)
   const [name, setName] = useState(s.kidName)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const ownAccount = !!s.ownAccount || kidHasOwnAccount(s.kidId)
 
   return (
     <section className="settings">
       <p className="eyebrow">Just for {s.kidName}</p>
+
+      <div className="set-card">
+        <h3>{s.kidName}'s Spotify account</h3>
+        <p className="muted">
+          {ownAccount ? 'Listens with their own account: ' : "Shares this device's account: "}
+          <b>{me?.display_name ?? me?.id ?? '…'}</b>
+          {me?.product && me.product !== 'premium' && (
+            <span className="error-note block">This account isn't Premium, so songs can't play inside Bop Box.</span>
+          )}
+        </p>
+        {!ownAccount && (
+          <p className="muted small">
+            Give {s.kidName} their own account so they can listen at the same time as everyone else.
+          </p>
+        )}
+        <button className="btn-soft" onClick={() => s.kidId && void beginLogin('main', s.kidId)}>
+          {ownAccount ? 'Switch account' : `Sign in with ${s.kidName}'s own Spotify`}
+        </button>
+      </div>
       <div className="set-card">
         <h3>Name</h3>
         <input
@@ -681,13 +702,8 @@ function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: stri
       </div>
 
       <div className="set-card">
-        <h3>Spotify</h3>
-        <p className="muted">
-          Signed in as <b>{me?.display_name ?? me?.id ?? '…'}</b>
-          {me?.product && me.product !== 'premium' && (
-            <span className="error-note block">This account isn't Premium, so songs can't play inside Bop Box.</span>
-          )}
-        </p>
+        <h3>Sign out</h3>
+        <p className="muted small">Signs every Spotify account out of Bop Box on this device.</p>
         <button
           className="btn-ghost danger"
           onClick={() => {
