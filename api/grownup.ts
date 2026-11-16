@@ -64,7 +64,7 @@ async function asGrownup<T>(gid: string, url: string): Promise<T> {
   if (!auth) throw new Error('not connected')
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${auth.token}` } })
-    if (!res.ok) console.error(`grown-up read attempt ${attempt + 1}: ${res.status} ${res.headers.get('www-authenticate') ?? ''} ${(await res.clone().text().catch(() => '')).slice(0, 200)}`)
+    if (!res.ok) console.error(`grown-up read attempt ${attempt + 1}: ${res.status} retry-after=${res.headers.get("retry-after")} ${(await res.clone().text().catch(() => '')).slice(0, 200)}`)
     if (res.status === 401) {
       auth = (await grownupToken(gid, true))!
       continue
