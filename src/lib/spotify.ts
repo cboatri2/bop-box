@@ -6,6 +6,7 @@
 
 import { DEMO } from './demo-flag'
 import { getSettings } from './store'
+import { API_BASE } from './api'
 import { logEvent } from './log'
 
 export const CLIENT_ID: string = import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? ''
@@ -365,6 +366,33 @@ function pausePlaylists(seconds?: number) {
   }
 }
 
+/** Ask Bop Box's server how long Spotify actually wants us to wait (the server can read that; browsers can't). */
+async function learnRealPause(token: string) {
+  if (!API_BASE) return
+  try {
+    const r = await fetch(`${API_BASE}/limits`, { headers: { Authorization: `Bearer ${token}` } })
+    if (!r.ok) return
+    const j = (await r.json()) as { limited: boolean; retryAfter: number; at: number }
+    if (j.limited && j.retryAfter > 0) {
+      const until = j.at + j.retryAfter * 1000
+      if (until > playlistCooldownUntil()) {
+        localStorage.setItem(COOLDOWN_KEY, String(until))
+        logEvent(`Spotify wants Bop Box to wait until ${new Date(until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} before loading playlists`)
+        cooldownListeners.forEach((l) => l(until))
+      }
+    }
+  } catch {
+    /* keep the guess */
+  }
+}
+
+const cooldownListeners = new Set<(until: number) => void>()
+/** Hear when Bop Box learns Spotify's real pause time. */
+export function onCooldownLearned(l: (until: number) => void) {
+  cooldownListeners.add(l)
+  return () => cooldownListeners.delete(l)
+}
+
 function playlistsOk() {
   try {
     if (localStorage.getItem(STREAK_KEY)) localStorage.removeItem(STREAK_KEY)
@@ -412,6 +440,7 @@ async function api<T = unknown>(path: string, init: Init = {}, retried = false, 
   const after = Number(res.headers.get('Retry-After'))
   if (res.status === 429 && isPlaylists && (after > 20 || attempt >= 1)) {
     pausePlaylists(after > 20 ? after : undefined)
+    if (!(after > 20)) await learnRealPause(token)
     throw new SpotifyError(429, 'Spotify asked Bop Box to take a break', 'cooldown')
   }
   if (res.status === 429 && after > 20) throw new SpotifyError(429, 'Spotify asked Bop Box to take a break', 'cooldown')
