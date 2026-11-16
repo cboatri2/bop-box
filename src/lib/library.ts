@@ -56,11 +56,22 @@ export function mixName(rawName: string, emoji: string, kidName: string) {
 
 const byNewest = (a: Song, b: Song) => b.addedAt.localeCompare(a.addedAt)
 
+/** Thrown when the active kid changed while their library was loading; the result is simply dropped. */
+export class StaleLoad extends Error {}
+
 export async function loadLibrary(me: Me): Promise<Library> {
   const st = getSettings()
   const [playlists, grownup] = await Promise.all([sp.listMyPlaylists(), loadGrownup()])
-  const pickedId = await sp.ensurePlaylist(me, playlists, st.playlistId, st.kidName)
+  if (getSettings().kidId !== st.kidId) throw new StaleLoad()
+  // Only ever make a new box when we're sure which account we're looking at, so a quick
+  // switch between kids can't leave duplicate boxes behind.
+  const { id: pickedId, created } = await sp.ensurePlaylist(me, playlists, st.playlistId, st.kidName, async () => {
+    const fresh = await sp.getMe()
+    if (getSettings().kidId !== st.kidId || fresh.id !== me.id) throw new StaleLoad()
+  })
+  if (getSettings().kidId !== st.kidId) throw new StaleLoad()
   if (pickedId !== st.playlistId) updateSettings({ playlistId: pickedId })
+  if (created) await bringSongsAlong(me, pickedId, st.kidName)
 
   // Approved playlists can come from this account or the connected grown-up's account.
   const approved = new Set(st.approvedPlaylists)
@@ -113,6 +124,28 @@ export async function loadLibrary(me: Me): Promise<Library> {
     boxes: playlists
       .filter((p) => p.owner.id === me.id && BOX_RE.test(p.name))
       .map((p) => ({ id: p.id, kidName: p.name.match(BOX_RE)![1] })),
+  }
+}
+
+/**
+ * A kid who just moved to their own Spotify account starts with an empty box there. If this device's
+ * shared account has their old box, copy its songs over so nothing has to be picked again.
+ */
+async function bringSongsAlong(me: Me, newId: string, kidName: string) {
+  if (!sp.deviceSignedIn()) return
+  try {
+    const dev = await sp.getMe('device')
+    if (dev.id === me.id) return
+    const old = (await sp.listMyPlaylists('device'))
+      .filter((p) => p.owner.id === dev.id && p.name === sp.boxName(kidName))
+      .sort((a, b) => b.total - a.total)[0]
+    if (!old?.total) return
+    const uris = (await sp.getPlaylistSongs(old.id, 'device')).map((x) => x.uri)
+    for (let i = 0; i < uris.length; i += 100) await sp.addToPlaylist(newId, uris.slice(i, i + 100), false)
+    logEvent(`Copied ${uris.length} songs into ${kidName}'s own account`)
+    if (uris.length) toast(`Brought ${kidName}'s ${uris.length} songs over to their own account.`, '🎁')
+  } catch (e) {
+    logEvent(`Couldn't copy ${kidName}'s songs from the shared account (${why(e)})`)
   }
 }
 

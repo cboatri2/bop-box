@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Mascot } from './components/Mascot'
 import { PinPad } from './components/PinPad'
 import { Backdrop, Icon, SafeLayer, Sheet, Toasts } from './components/ui'
-import { allowedSongs, keepAllowed, loadLibrary, type Library, type Mix } from './lib/library'
+import { allowedSongs, keepAllowed, loadLibrary, StaleLoad, type Library, type Mix } from './lib/library'
 import { getPlayer, initPlayer, restartPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
 import {
   addToPlaylist,
@@ -186,6 +186,7 @@ function Main() {
       if (getSettings().kidId === kidAtStart && edits.current === editsAtStart) setLib(next)
       retries.current = 0
     } catch (e) {
+      if (e instanceof StaleLoad) return
       if (e instanceof AuthError && e.acct === 'main') {
         // A kid with their own account needs that account signed in again; never fall back to another.
         if (getSettings().ownAccount) {

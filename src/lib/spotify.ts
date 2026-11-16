@@ -28,8 +28,11 @@ const SCOPES = [
 // can become shelves. This token can only read playlists: it can't play, change or delete anything.
 const GROWNUP_SCOPES = 'playlist-read-private playlist-read-collaborative'
 
-/** 'main' = the account this device plays music with. 'grownup' = a read-only grown-up connection. */
-export type Acct = 'main' | 'grownup'
+/**
+ * 'main' = the account the active kid plays music with. 'grownup' = a read-only grown-up connection.
+ * 'device' = this device's shared account, whoever is active (used to bring a kid's songs along).
+ */
+export type Acct = 'main' | 'grownup' | 'device'
 
 // 'main' resolves to the active kid's own Spotify login if they have one, otherwise the device's login.
 const DEVICE_KEY = 'bopbox.token'
@@ -47,6 +50,7 @@ const has = (key: string) => {
 
 function keyFor(acct: Acct) {
   if (acct === 'grownup') return GROWNUP_KEY
+  if (acct === 'device') return DEVICE_KEY
   const s = getSettings()
   // A kid with their own account never silently falls back to the device's account.
   return s.kidId && (s.ownAccount || has(KID_PREFIX + s.kidId)) ? KID_PREFIX + s.kidId : DEVICE_KEY
@@ -424,11 +428,22 @@ export async function listMyPlaylists(acct: Acct = 'main'): Promise<PlaylistInfo
 
 export const boxName = (kidName: string) => `${kidName || 'My'}'s Bop Box ✨`
 
-/** Find a kid's "Picked for you" playlist, or create it. */
-export async function ensurePlaylist(me: Me, all: PlaylistInfo[], knownId: string | undefined, kidName: string) {
+/** Find a kid's "Picked for you" playlist, or create it (after `beforeCreate` confirms it's safe to). */
+export async function ensurePlaylist(
+  me: Me,
+  all: PlaylistInfo[],
+  knownId: string | undefined,
+  kidName: string,
+  beforeCreate: () => Promise<void> = async () => {},
+): Promise<{ id: string; created: boolean }> {
   const mine = all.filter((p) => p.owner.id === me.id)
-  const hit = (knownId && mine.find((p) => p.id === knownId)) || mine.find((p) => p.name === boxName(kidName))
-  if (hit) return hit.id
+  // If there are several with the kid's name, use the one with the most songs.
+  const named = mine.filter((p) => p.name === boxName(kidName)).sort((a, b) => b.total - a.total)
+  const known = knownId ? mine.find((p) => p.id === knownId) : undefined
+  // An empty box when a same-named one has songs is a leftover duplicate: use the full one.
+  const hit = known && (known.total > 0 || !named[0]?.total) ? known : named[0] ?? known
+  if (hit) return { id: hit.id, created: false }
+  await beforeCreate()
   const created = await api<{ id: string }>('/me/playlists', {
     method: 'POST',
     body: JSON.stringify({
@@ -437,7 +452,8 @@ export async function ensurePlaylist(me: Me, all: PlaylistInfo[], knownId: strin
       description: `Songs a grown-up picked for ${kidName || 'a kid'} in Bop Box. ${MARKER}`,
     }),
   })
-  return created.id
+  logEvent(`Made a new "${boxName(kidName)}" playlist`)
+  return { id: created.id, created: true }
 }
 
 export const mixDescription = (kidName: string, color: string, emoji: string, kidKey?: string) =>
