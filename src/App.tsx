@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Mascot } from './components/Mascot'
 import { PinPad } from './components/PinPad'
 import { Backdrop, Icon, SafeLayer, Sheet, Toasts } from './components/ui'
-import { allowedSongs, keepAllowed, loadLibrary, StaleLoad, type Library, type Mix } from './lib/library'
+import { allowedSongs, keepAllowed, loadLibrary, savedLibrary, saveLibrary, StaleLoad, type Library, type Mix } from './lib/library'
 import { getPlayer, initPlayer, restartPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
 import {
   addToPlaylist,
@@ -17,6 +17,7 @@ import {
   retireMix,
   forgetDeviceAccount,
   getMe,
+  playlistCooldownUntil,
   isLoggedIn,
   logout,
   mixDescription,
@@ -135,6 +136,8 @@ function Main() {
   const meRef = useRef<Me | null>(null)
   const busy = useRef(false)
   const retryTimer = useRef(0)
+  const lastLoaded = useRef(0)
+  const pauseToldAt = useRef(0)
   const retries = useRef(0)
   const edits = useRef(0) // bumped by every mix change, so a refresh that started earlier can't undo it
   // With several kids on one device, start by asking who's listening.
@@ -195,8 +198,12 @@ function Main() {
       setMe(m)
       const next = await loadLibrary(m)
       // Ignore a load for a kid we've switched away from, or one that started before a mix edit.
-      if (getSettings().kidId === kidAtStart && edits.current === editsAtStart) setLib(next)
+      if (getSettings().kidId === kidAtStart && edits.current === editsAtStart) {
+        setLib(next)
+        if (kidAtStart) saveLibrary(kidAtStart, next)
+      }
       retries.current = 0
+      lastLoaded.current = Date.now()
       // Pick up settings changed on another device (and send ours); reload if the approved list changed.
       void syncActiveKid().then((changed) => onSynced.current(changed, kidAtStart))
     } catch (e) {
@@ -227,6 +234,21 @@ function Main() {
           ? `Loading songs failed (Spotify said ${status}: ${(e as Error).message})`
           : `Loading songs failed (${e instanceof Error ? e.message : 'unknown'})`,
       )
+      const pausedUntil = playlistCooldownUntil()
+      if (status === 429 && pausedUntil > Date.now()) {
+        // Spotify asked for a long break: keep showing the saved songs, and don't ask again until then.
+        const at = new Date(pausedUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        if (!pauseToldAt.current) {
+          pauseToldAt.current = Date.now()
+          toast(
+            savedLibrary(getSettings().kidId)
+              ? `Spotify asked Bop Box to rest until ${at}. Playing your saved songs until then!`
+              : `Spotify asked Bop Box to rest until ${at}. Your songs will be back then.`,
+            '😴',
+          )
+        }
+        return
+      }
       if (status === 403) toast("Spotify won't let this account into Bop Box (403). Grown-ups: see Settings → Troubleshooting.", '🔒')
       else if (status === 429) toast('Spotify is busy right now. Trying again in a moment…', '⏳')
       else if (status) toast(`Spotify had a hiccup (${status}). Trying again in a moment…`, '😕')
@@ -269,18 +291,27 @@ function Main() {
     meRef.current = null
     setNeedsLogin(false)
     setMaxVolume(getSettings().maxVolume)
-    setLib(null)
-    setLoading(true)
+    // Show this kid's saved library right away (instant, and works while Spotify is busy), then refresh it.
+    const saved = savedLibrary(s.kidId)
+    setLib(saved)
+    setLoading(!saved)
     busy.current = false
     void load()
   }, [s.kidId, s.setupDone, load, view === 'add-kid'])
 
   useEffect(() => {
     if (!s.setupDone) return
-    // Pick up songs a grown-up added from the Spotify app.
-    const onFocus = () => !document.hidden && void load()
+    // Pick up songs a grown-up added from the Spotify app: when Bop Box comes back on screen (if it's
+    // been a couple of minutes) and every 5 minutes while it's open. Unchanged playlists aren't re-read.
+    const onFocus = () => {
+      if (document.hidden) return
+      // Settings from other devices are cheap to check (our own server), so always look.
+      const kid = getSettings().kidId
+      void syncActiveKid().then((changed) => onSynced.current(changed, kid))
+      if (Date.now() - lastLoaded.current > 2 * 60 * 1000) void load()
+    }
     document.addEventListener('visibilitychange', onFocus)
-    const t = setInterval(onFocus, 90000)
+    const t = setInterval(onFocus, 5 * 60 * 1000)
     return () => {
       document.removeEventListener('visibilitychange', onFocus)
       clearInterval(t)

@@ -21,6 +21,7 @@ import {
   type Song,
   type Track,
   forgetKidAccount,
+  playlistCooldownUntil,
 } from '../lib/spotify'
 import { isBopBoxPlaylist, type Library } from '../lib/library'
 import { clearLog, logEvent, readLog } from '../lib/log'
@@ -806,6 +807,13 @@ function Troubleshooting() {
               Grown-up playlists:{' '}
               <b>{isGrownupConnected() ? 'connected on this device only' : familyLinked() ? 'connected for the whole family' : 'not connected'}</b>
             </li>
+            {playlistCooldownUntil() > Date.now() && (
+              <li>
+                Spotify asked Bop Box to pause playlist loading until{' '}
+                <b>{new Date(playlistCooldownUntil()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</b>{' '}
+                (saved songs still play)
+              </li>
+            )}
             <li>
               Settings sync between devices:{' '}
               <b>

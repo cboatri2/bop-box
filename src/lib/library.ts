@@ -3,7 +3,7 @@ import type { Image, Me, PlaylistInfo, Song } from './spotify'
 import { getSettings, updateSettings, type ThemeName } from './store'
 import { logEvent } from './log'
 import { toast } from './toast'
-import { familyAvailable, familyGrownup, familyGrownupSongs, shareGrownupWithFamily } from './family'
+import { familyAvailable, familyGrownup, shareGrownupWithFamily } from './family'
 
 // One kid's music library:
 //   • "Picked for you": the kid's own Bop Box playlist that songs get added to one at a time
@@ -103,14 +103,14 @@ export async function loadLibrary(me: Me): Promise<Library> {
     })
 
   // A few playlists at a time, so a big library doesn't trip Spotify's rate limit.
-  const pickedSongs = await sp.getPlaylistSongs(pickedId)
+  const pickedSongs = await sp.getPlaylistSongs(pickedId, 'main', playlists.find((p) => p.id === pickedId)?.snapshot)
   const shelfSongs = await inBatches(shelfInfos, ({ p, acct }) =>
-    (acct === 'grownup' && grownup?.via === 'family' ? familyGrownupSongs(p.id) : sp.getPlaylistSongs(p.id, acct)).catch((e) => {
+    sp.getPlaylistSongs(p.id, acct, p.snapshot).catch((e) => {
       logEvent(`Couldn't read the "${p.name}" shelf (${why(e)})`)
       return [] as Song[]
     }),
   )
-  const mixSongs = await inBatches(mixInfos, ({ p }) => sp.getPlaylistSongs(p.id).catch(() => [] as Song[]))
+  const mixSongs = await inBatches(mixInfos, ({ p }) => sp.getPlaylistSongs(p.id, 'main', p.snapshot).catch(() => [] as Song[]))
 
   return {
     picked: { id: pickedId, name: 'Picked for you', images: [], songs: pickedSongs.sort(byNewest) },
@@ -199,3 +199,28 @@ export function allowedSongs(lib: Library | null, hideExplicit: boolean): Song[]
 }
 
 export const keepAllowed = (songs: Song[], allowed: Set<string>) => songs.filter((s) => allowed.has(s.uri))
+
+// ── a saved copy of each kid's library, so Bop Box opens instantly and works while Spotify is busy ──
+
+const libKey = (kidId: string) => `bopbox.lib.${kidId}`
+
+export function saveLibrary(kidId: string, lib: Library) {
+  const slimShelf = (sh: Shelf) => ({ ...sh, songs: sh.songs.map(sp.slim) })
+  try {
+    localStorage.setItem(
+      libKey(kidId),
+      JSON.stringify({ ...lib, picked: slimShelf(lib.picked), shelves: lib.shelves.map(slimShelf), mixes: lib.mixes.map((m) => ({ ...m, songs: m.songs.map(sp.slim) })) }),
+    )
+  } catch {
+    /* storage full: just won't open instantly next time */
+  }
+}
+
+export function savedLibrary(kidId: string | null): Library | null {
+  if (!kidId) return null
+  try {
+    return JSON.parse(localStorage.getItem(libKey(kidId)) ?? 'null')
+  } catch {
+    return null
+  }
+}

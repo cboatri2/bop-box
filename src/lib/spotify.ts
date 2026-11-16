@@ -345,11 +345,50 @@ type Init = RequestInit & { acct?: Acct }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+// When Spotify keeps saying "slow down", Bop Box stops asking for playlists for a while (remembered
+// across reloads) instead of retrying, which would only extend the wait. Browsers can't read how long
+// Spotify wants (it doesn't share that header with web pages), so pauses grow: 1, 5, 15, 30, 60 minutes,
+// and reset as soon as Spotify answers normally again.
+const COOLDOWN_KEY = 'bopbox.cooldown'
+const STREAK_KEY = 'bopbox.cooldown.streak'
+const PAUSE_MINUTES = [1, 5, 15, 30, 60]
+
+function pausePlaylists(seconds?: number) {
+  try {
+    const streak = Number(localStorage.getItem(STREAK_KEY)) || 0
+    const ms = seconds ? seconds * 1000 : PAUSE_MINUTES[Math.min(streak, PAUSE_MINUTES.length - 1)] * 60_000
+    localStorage.setItem(STREAK_KEY, String(streak + 1))
+    if (Date.now() + ms > playlistCooldownUntil()) localStorage.setItem(COOLDOWN_KEY, String(Date.now() + ms))
+    logEvent(`Spotify keeps saying "slow down"; pausing playlist loading for ${Math.round(ms / 60_000)} min`)
+  } catch {
+    /* ignore */
+  }
+}
+
+function playlistsOk() {
+  try {
+    if (localStorage.getItem(STREAK_KEY)) localStorage.removeItem(STREAK_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+export function playlistCooldownUntil(): number {
+  try {
+    return Number(localStorage.getItem(COOLDOWN_KEY)) || 0
+  } catch {
+    return 0
+  }
+}
+
 async function api<T = unknown>(path: string, init: Init = {}, retried = false, attempt = 0): Promise<T> {
   if (DEMO) return (init.method === 'POST' && path === '/me/playlists' ? { id: `demo-${Date.now()}` } : undefined) as T
   const { acct = 'main', ...req } = init
   const token = await getAccessToken(retried, acct)
   const safeToRepeat = !req.method || req.method === 'GET'
+  const isPlaylists = path.includes('/playlists')
+  if (isPlaylists && Date.now() < playlistCooldownUntil()) {
+    throw new SpotifyError(429, 'Spotify asked Bop Box to take a break', 'cooldown')
+  }
   let res: Response
   try {
     res = await fetch(path.startsWith('http') ? path : API + path, {
@@ -369,9 +408,16 @@ async function api<T = unknown>(path: string, init: Init = {}, retried = false, 
     throw e
   }
   if (res.status === 401 && !retried) return api<T>(path, init, true, attempt)
+  // A long "slow down": stop asking for playlists until Spotify says it's okay again.
+  const after = Number(res.headers.get('Retry-After'))
+  if (res.status === 429 && isPlaylists && (after > 20 || attempt >= 1)) {
+    pausePlaylists(after > 20 ? after : undefined)
+    throw new SpotifyError(429, 'Spotify asked Bop Box to take a break', 'cooldown')
+  }
+  if (res.status === 429 && after > 20) throw new SpotifyError(429, 'Spotify asked Bop Box to take a break', 'cooldown')
+  if (res.ok && isPlaylists) playlistsOk()
   // Spotify asks apps to slow down with 429 (and has the odd hiccup with 5xx): wait and try again.
   if ((res.status === 429 || (res.status >= 500 && safeToRepeat)) && attempt < 3) {
-    const after = Number(res.headers.get('Retry-After'))
     const ms = Math.min(after > 0 ? after * 1000 : 1500 * 2 ** attempt, 10_000)
     if (attempt === 0) logEvent(`Spotify said ${res.status}; waiting ${Math.round(ms / 1000)}s and trying again`)
     await wait(ms)
@@ -444,9 +490,11 @@ export type PlaylistInfo = {
   owner: { id: string; display_name?: string | null }
   collaborative: boolean
   total: number
+  /** Changes whenever the playlist's songs change, so unchanged playlists needn't be read again. */
+  snapshot?: string
 }
 
-type RawPlaylist = Omit<PlaylistInfo, 'total'> & { items?: { total: number }; tracks?: { total: number } }
+type RawPlaylist = Omit<PlaylistInfo, 'total' | 'snapshot'> & { items?: { total: number }; tracks?: { total: number }; snapshot_id?: string }
 
 /** Every playlist in the signed-in account's library. */
 export async function listMyPlaylists(acct: Acct = 'main'): Promise<PlaylistInfo[]> {
@@ -464,6 +512,7 @@ export async function listMyPlaylists(acct: Acct = 'main'): Promise<PlaylistInfo
         owner: p.owner,
         collaborative: !!p.collaborative,
         total: p.items?.total ?? p.tracks?.total ?? 0,
+        snapshot: p.snapshot_id,
       })
     }
     next = page.next
@@ -519,7 +568,7 @@ export const updatePlaylistDetails = (id: string, details: { name?: string; desc
   api(`/playlists/${id}`, { method: 'PUT', body: JSON.stringify(details), acct })
 
 export const replacePlaylistItems = (id: string, uris: string[]) =>
-  api(`/playlists/${id}/items`, { method: 'PUT', body: JSON.stringify({ uris: uris.slice(0, 100) }) })
+  (forgetSavedSongs(id), api)(`/playlists/${id}/items`, { method: 'PUT', body: JSON.stringify({ uris: uris.slice(0, 100) }) })
 
 /** Spotify "deletes" a playlist by removing it from the owner's library. */
 export const deletePlaylist = (id: string) =>
@@ -544,7 +593,49 @@ export async function retireMix(id: string) {
 
 type PlaylistEntry = { added_at: string; item?: Track | null; track?: Track | null }
 
-export async function getPlaylistSongs(id: string, acct: Acct = 'main'): Promise<Song[]> {
+/**
+ * A playlist's songs. With the playlist's snapshot id, a saved copy is used when nothing changed,
+ * which keeps Bop Box well inside Spotify's limits.
+ */
+export async function getPlaylistSongs(id: string, acct: Acct = 'main', snapshot?: string): Promise<Song[]> {
+  const cacheKey = `bopbox.songs.${id}`
+  if (snapshot && !DEMO) {
+    try {
+      const hit = JSON.parse(localStorage.getItem(cacheKey) ?? 'null') as { snap: string; songs: Song[] } | null
+      if (hit?.snap === snapshot) return hit.songs
+    } catch {
+      /* no saved copy */
+    }
+  }
+  const songs = await readPlaylistSongs(id, acct)
+  if (snapshot && !DEMO) {
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({ snap: snapshot, songs: songs.map(slim) }))
+    } catch {
+      /* storage full: fine, read it again next time */
+    }
+  }
+  return songs
+}
+
+/** Keep only what Bop Box shows (two cover sizes), so saved copies stay small. */
+export const slim = (s: Song): Song => {
+  const imgs = [...(s.album.images ?? [])].sort((a, b) => (a.width ?? 0) - (b.width ?? 0))
+  const keep = [imgs.find((i) => (i.width ?? 0) >= 100), imgs.find((i) => (i.width ?? 0) >= 300) ?? imgs[imgs.length - 1]]
+  return {
+    id: s.id,
+    uri: s.uri,
+    name: s.name,
+    explicit: s.explicit,
+    duration_ms: s.duration_ms,
+    artists: s.artists.map((a) => ({ name: a.name })),
+    album: { name: s.album.name, images: [...new Set(keep.filter(Boolean))] as Image[] },
+    addedAt: s.addedAt,
+    ...(s.linked_from ? { linked_from: { uri: s.linked_from.uri } } : {}),
+  }
+}
+
+async function readPlaylistSongs(id: string, acct: Acct): Promise<Song[]> {
   const songs: Song[] = []
   let next: string | null = `/playlists/${id}/items?limit=50`
   while (next) {
@@ -562,11 +653,20 @@ export async function getPlaylistSongs(id: string, acct: Acct = 'main'): Promise
 export const renamePlaylist = (id: string, kidName: string) =>
   api(`/playlists/${id}`, { method: 'PUT', body: JSON.stringify({ name: boxName(kidName) }) })
 
+/** Drop a playlist's saved copy (after changing it here, so the change shows right away). */
+export function forgetSavedSongs(id: string) {
+  try {
+    localStorage.removeItem(`bopbox.songs.${id}`)
+  } catch {
+    /* ignore */
+  }
+}
+
 export const addToPlaylist = (id: string, uris: string[], atTop = true) =>
-  api(`/playlists/${id}/items`, { method: 'POST', body: JSON.stringify(atTop ? { uris, position: 0 } : { uris }) })
+  (forgetSavedSongs(id), api)(`/playlists/${id}/items`, { method: 'POST', body: JSON.stringify(atTop ? { uris, position: 0 } : { uris }) })
 
 export const removeFromPlaylist = (id: string, uris: string[]) =>
-  api(`/playlists/${id}/items`, {
+  (forgetSavedSongs(id), api)(`/playlists/${id}/items`, {
     method: 'DELETE',
     body: JSON.stringify({ items: uris.map((uri) => ({ uri })) }),
   })
