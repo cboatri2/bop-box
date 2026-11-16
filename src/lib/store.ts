@@ -1,81 +1,151 @@
 import { useSyncExternalStore } from 'react'
+import { DEMO } from './demo-flag'
 
-// Tiny persisted store. Everything here lives only in this browser —
+// Tiny persisted store. Everything here lives only on this device;
 // nothing personal is ever written into the code or the repo.
+//
+// A device can hold several kid profiles. `useSettings()` / `getSettings()` return the device-wide
+// settings merged with the *active* kid's fields, and `updateSettings()` routes each key to the
+// right place, so most of the app never has to think about which kid is active.
 
 export type ThemeName = 'bubblegum' | 'ocean' | 'mint' | 'grape' | 'sunshine'
 export type Accessory = 'headphones' | 'bow' | 'crown' | 'ears'
+export type Wish = { id: string; text: string; at: number }
 
-export type Settings = {
+export type Kid = {
+  id: string
   kidName: string
   theme: ThemeName
   accessory: Accessory
-  pinHash: string
   hideExplicit: boolean
-  maxVolume: number // 0–100, caps the kid's volume slider
-  nightColors: boolean // cozy dark colors in the evening
-  playlistId?: string
-  setupDone: boolean
-  approvedPlaylists: string[] // grown-up playlists the kid may play
-  mixMeta: Record<string, { emoji: string; color: ThemeName }> // fallback if Spotify hides descriptions
+  maxVolume: number // 0–100, caps the volume slider
+  playlistId?: string // this kid's "Picked for you" playlist in Spotify
+  approvedPlaylists: string[] // grown-up playlists this kid may play
   favorites: string[] // track uris
-  wishes: { id: string; text: string; at: number }[]
+  wishes: Wish[]
 }
 
-import { DEMO } from './demo-flag'
+type Device = {
+  pinHash: string
+  nightColors: boolean // cozy dark colors in the evening
+  setupDone: boolean
+  kids: Kid[]
+  activeKidId: string | null
+  mixMeta: Record<string, { emoji: string; color: ThemeName; kid?: string }> // fallback if Spotify hides descriptions
+}
+
+export type Settings = Device & Omit<Kid, 'id'> & { kidId: string | null }
+
+const KID_KEYS = new Set<keyof Kid>([
+  'kidName', 'theme', 'accessory', 'hideExplicit', 'maxVolume', 'playlistId', 'approvedPlaylists', 'favorites', 'wishes',
+])
 
 const KEY = DEMO ? 'bopbox.settings.demo' : 'bopbox.settings'
 
-const defaults: Settings = {
+export const newKid = (): Kid => ({
+  id: crypto.randomUUID(),
   kidName: '',
   theme: 'bubblegum',
   accessory: 'headphones',
-  pinHash: '',
   hideExplicit: true,
   maxVolume: 70,
-  nightColors: true,
-  setupDone: false,
   approvedPlaylists: [],
-  mixMeta: {},
   favorites: [],
   wishes: [],
+})
+
+const deviceDefaults: Device = {
+  pinHash: '',
+  nightColors: true,
+  setupDone: false,
+  kids: [],
+  activeKidId: null,
+  mixMeta: {},
 }
 
-function load(): Settings {
+function load(): Device {
   try {
     const raw = localStorage.getItem(KEY)
-    return raw ? { ...defaults, ...JSON.parse(raw) } : defaults
+    if (!raw) return deviceDefaults
+    const j = JSON.parse(raw)
+    if (Array.isArray(j.kids)) return { ...deviceDefaults, ...j }
+    // Migrate the original single-kid shape.
+    const kid: Kid = { ...newKid(), ...pick(j, [...KID_KEYS] as string[]) }
+    const has = !!(j.kidName || j.setupDone)
+    return {
+      ...deviceDefaults,
+      pinHash: j.pinHash ?? '',
+      nightColors: j.nightColors ?? true,
+      setupDone: !!j.setupDone,
+      mixMeta: j.mixMeta ?? {},
+      kids: has ? [kid] : [],
+      activeKidId: has ? kid.id : null,
+    }
   } catch {
-    return defaults
+    return deviceDefaults
   }
 }
 
-let state = load()
+function pick(o: Record<string, unknown>, keys: string[]) {
+  return Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]))
+}
+
+let device = load()
+let merged = merge(device)
 const listeners = new Set<() => void>()
 
+function merge(d: Device): Settings {
+  const kid = d.kids.find((k) => k.id === d.activeKidId)
+  const { id, ...fields } = kid ?? newKid()
+  return { ...d, ...fields, kidId: kid ? id : null }
+}
+
+function commit(next: Device) {
+  device = next
+  merged = merge(device)
+  try {
+    localStorage.setItem(KEY, JSON.stringify(device))
+  } catch {
+    /* ignore */
+  }
+  listeners.forEach((l) => l())
+}
+
 export function getSettings() {
-  return state
+  return merged
 }
 
+/** Updates device settings and/or the active kid. Kid fields with no active kid start a new kid. */
 export function updateSettings(patch: Partial<Settings> | ((s: Settings) => Partial<Settings>)) {
-  const p = typeof patch === 'function' ? patch(state) : patch
-  state = { ...state, ...p }
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state))
-  } catch {
-    /* ignore */
+  const p = typeof patch === 'function' ? patch(merged) : patch
+  const kidPatch: Partial<Kid> = {}
+  const devPatch: Partial<Device> = {}
+  for (const [k, v] of Object.entries(p)) {
+    if (KID_KEYS.has(k as keyof Kid)) (kidPatch as Record<string, unknown>)[k] = v
+    else if (k !== 'kidId') (devPatch as Record<string, unknown>)[k] = v
   }
-  listeners.forEach((l) => l())
+  let next = { ...device, ...devPatch }
+  if (Object.keys(kidPatch).length) {
+    let kids = next.kids
+    let active = next.activeKidId
+    if (!kids.some((k) => k.id === active)) {
+      const k = newKid()
+      kids = [...kids, k]
+      active = k.id
+    }
+    kids = kids.map((k) => (k.id === active ? { ...k, ...kidPatch } : k))
+    next = { ...next, kids, activeKidId: active }
+  }
+  commit(next)
 }
 
-export function resetSettings() {
-  state = defaults
-  try {
-    localStorage.removeItem(KEY)
-  } catch {
-    /* ignore */
-  }
-  listeners.forEach((l) => l())
+export function setActiveKid(id: string | null) {
+  commit({ ...device, activeKidId: id })
+}
+
+export function removeKid(id: string) {
+  const kids = device.kids.filter((k) => k.id !== id)
+  commit({ ...device, kids, activeKidId: device.activeKidId === id ? kids[0]?.id ?? null : device.activeKidId })
 }
 
 export function useSettings() {
@@ -84,7 +154,7 @@ export function useSettings() {
       listeners.add(l)
       return () => listeners.delete(l)
     },
-    () => state,
+    () => merged,
   )
 }
 

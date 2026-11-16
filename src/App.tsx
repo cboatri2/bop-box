@@ -4,7 +4,7 @@ import { Mascot } from './components/Mascot'
 import { PinPad } from './components/PinPad'
 import { Backdrop, Icon, Sheet, Toasts } from './components/ui'
 import { allowedSongs, keepAllowed, loadLibrary, type Library, type Mix } from './lib/library'
-import { initPlayer, setApproved, usePlayer, wakeUp } from './lib/player'
+import { getPlayer, initPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
 import {
   addToPlaylist,
   AuthError,
@@ -15,14 +15,16 @@ import {
   isLoggedIn,
   logout,
   mixDescription,
+  mixPlaylistName,
   removeFromPlaylist,
+  renamePlaylist,
   replacePlaylistItems,
   updatePlaylistDetails,
   type Me,
   type Song,
   type Track,
 } from './lib/spotify'
-import { getSettings, hashPin, isNightTime, updateSettings, useSettings, type ThemeName } from './lib/store'
+import { getSettings, hashPin, isNightTime, removeKid, setActiveKid, updateSettings, useSettings, type ThemeName } from './lib/store'
 import { toast } from './lib/toast'
 import { DEMO } from './lib/demo-flag'
 import { KidHome } from './screens/KidHome'
@@ -30,6 +32,7 @@ import { NowPlaying, SpeakerSheet } from './screens/NowPlaying'
 import { ParentPanel } from './screens/ParentPanel'
 import { Setup } from './screens/Setup'
 import { Welcome } from './screens/Welcome'
+import { WhoIsListening } from './screens/WhoIsListening'
 
 export default function App() {
   const [boot, setBoot] = useState<'loading' | 'out' | 'in'>('loading')
@@ -86,7 +89,7 @@ export type MixOps = {
   reorder: (id: string, songs: Song[]) => Promise<void>
 }
 
-type View = 'kid' | 'gate' | 'parent'
+type View = 'kid' | 'gate' | 'parent' | 'add-kid'
 
 function Main() {
   const s = useSettings()
@@ -99,6 +102,10 @@ function Main() {
   const [speakerOpen, setSpeakerOpen] = useState(false)
   const meRef = useRef<Me | null>(null)
   const busy = useRef(false)
+  // With several kids on one device, start by asking who's listening.
+  const [picking, setPicking] = useState(() => getSettings().kids.length > 1)
+  const [gateNext, setGateNext] = useState<'parent' | 'add-kid'>('parent')
+  const prevKid = useRef<string | null>(null)
 
   useEffect(() => initPlayer(getSettings().maxVolume), [])
 
@@ -126,13 +133,17 @@ function Main() {
       if (import.meta.env.DEV && DEMO) {
         const { demoLibrary } = await import('./lib/demo')
         setMe({ id: 'demo', display_name: 'Demo grown-up', product: 'premium' })
-        setLib((L) => (L ? { ...demoLibrary(getSettings().approvedPlaylists), mixes: L.mixes } : demoLibrary(getSettings().approvedPlaylists)))
+        const st = getSettings()
+        const fresh = demoLibrary(st.approvedPlaylists, st.kids[0]?.id === st.kidId)
+        setLib((L) => (L ? { ...fresh, mixes: L.mixes } : fresh))
         return
       }
+      const kidAtStart = getSettings().kidId
       const m = meRef.current ?? (await getMe())
       meRef.current = m
       setMe(m)
-      setLib(await loadLibrary(m))
+      const next = await loadLibrary(m)
+      if (getSettings().kidId === kidAtStart) setLib(next) // ignore a load for a kid we've switched away from
     } catch (e) {
       if (e instanceof AuthError) {
         logout()
@@ -146,9 +157,19 @@ function Main() {
     }
   }, [])
 
+  // Switching kids: pause, apply that kid's volume cap, and load their library.
+  useEffect(() => {
+    if (!s.setupDone || !s.kidId) return
+    if (!getPlayer().paused) void togglePlay()
+    setMaxVolume(getSettings().maxVolume)
+    setLib(null)
+    setLoading(true)
+    busy.current = false
+    void load()
+  }, [s.kidId, s.setupDone, load])
+
   useEffect(() => {
     if (!s.setupDone) return
-    void load()
     // Pick up songs a grown-up added from the Spotify app.
     const onFocus = () => !document.hidden && void load()
     document.addEventListener('visibilitychange', onFocus)
@@ -193,9 +214,12 @@ function Main() {
     () => ({
       async create(name, emoji, color) {
         try {
-          const kid = getSettings().kidName
-          const pl = await createPlaylist(`${emoji} ${name}`, mixDescription(kid, color, emoji))
-          updateSettings((st) => ({ mixMeta: { ...st.mixMeta, [pl.id]: { emoji, color } } }))
+          const st = getSettings()
+          const pl = await createPlaylist(
+            mixPlaylistName(emoji, name, st.kidName),
+            mixDescription(st.kidName, color, emoji, st.playlistId),
+          )
+          updateSettings((x) => ({ mixMeta: { ...x.mixMeta, [pl.id]: { emoji, color, kid: st.playlistId } } }))
           const mix: Mix = { id: pl.id, name, emoji, color, songs: [] }
           setLib((L) => L && { ...L, mixes: [...L.mixes, mix] })
           return mix
@@ -206,10 +230,11 @@ function Main() {
       },
       async edit(id, name, emoji, color) {
         patchMix(id, (m) => ({ ...m, name, emoji, color }))
-        updateSettings((st) => ({ mixMeta: { ...st.mixMeta, [id]: { emoji, color } } }))
+        const st = getSettings()
+        updateSettings((x) => ({ mixMeta: { ...x.mixMeta, [id]: { emoji, color, kid: st.playlistId } } }))
         await updatePlaylistDetails(id, {
-          name: `${emoji} ${name}`,
-          description: mixDescription(getSettings().kidName, color, emoji),
+          name: mixPlaylistName(emoji, name, st.kidName),
+          description: mixDescription(st.kidName, color, emoji, st.playlistId),
         }).catch(() => toast("Couldn't save that.", '😕'))
       },
       async remove(id) {
@@ -246,6 +271,50 @@ function Main() {
 
   if (!s.setupDone) return <Setup onDone={() => setView('parent')} />
 
+  if (view === 'add-kid') {
+    const onDevice = new Set(s.kids.map((k) => k.playlistId).filter(Boolean))
+    return (
+      <Setup
+        mode="add"
+        existing={(lib?.boxes ?? []).filter((b) => !onDevice.has(b.id))}
+        onDone={() => {
+          setPicking(false)
+          setView('parent')
+          toast(`${getSettings().kidName} is all set!`, '🎉')
+        }}
+        onCancel={() => {
+          const now = getSettings().kidId
+          if (now && now !== prevKid.current) removeKid(now)
+          setActiveKid(prevKid.current)
+          setView('parent')
+        }}
+      />
+    )
+  }
+
+  if (picking && s.kids.length > 1) {
+    return (
+      <WhoIsListening
+        kids={s.kids}
+        onPick={(id: string) => {
+          setActiveKid(id)
+          setPicking(false)
+        }}
+        onGrownUps={() => {
+          setGateNext('parent')
+          setView('gate')
+          setPicking(false)
+        }}
+      />
+    )
+  }
+
+  const startAddKid = () => {
+    prevKid.current = getSettings().kidId
+    setActiveKid(null)
+    setView('add-kid')
+  }
+
   const noSpeaker = !p.deviceId && (p.sdk === 'unsupported' || p.sdk === 'premium-needed')
 
   return (
@@ -273,7 +342,11 @@ function Main() {
         mixOps={mixOps}
         loading={loading}
         onOpenPlayer={() => setNpOpen(true)}
-        onGrownUps={() => setView('gate')}
+        onGrownUps={() => {
+          setGateNext('parent')
+          setView('gate')
+        }}
+        onSwitchKid={s.kids.length > 1 ? () => setPicking(true) : undefined}
       />
       <NowPlaying open={npOpen} onClose={() => setNpOpen(false)} mixes={mixes} mixOps={mixOps} />
       <SpeakerSheet open={speakerOpen} onClose={() => setSpeakerOpen(false)} />
@@ -285,7 +358,8 @@ function Main() {
           onComplete={async (pin) => {
             if ((await hashPin(pin)) !== getSettings().pinHash) return false
             setNpOpen(false)
-            setView('parent')
+            if (gateNext === 'add-kid') startAddKid()
+            else setView('parent')
             return true
           }}
         />
@@ -300,6 +374,17 @@ function Main() {
             playlists={lib?.playlists ?? []}
             pickedId={lib?.picked.id}
             onApprovedChange={() => void load()}
+            onAddKid={startAddKid}
+            onRenameKid={(name) => {
+              const old = getSettings().kidName
+              updateSettings({ kidName: name })
+              const pid = getSettings().playlistId
+              if (pid) renamePlaylist(pid, name).catch(() => {})
+              // Keep "💃 Dance Party · Name" in sync in Spotify.
+              for (const m of lib?.mixes ?? []) {
+                if (old !== name) void updatePlaylistDetails(m.id, { name: mixPlaylistName(m.emoji, m.name, name) }).catch(() => {})
+              }
+            }}
             onAdd={onAdd}
             onRemove={onRemove}
             onClose={() => setView('kid')}

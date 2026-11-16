@@ -11,7 +11,6 @@ import {
   getTrack,
   logout,
   parseSpotifyLink,
-  renamePlaylist,
   searchTracks,
   type Me,
   type PlaylistInfo,
@@ -19,7 +18,8 @@ import {
   type Track,
 } from '../lib/spotify'
 import { isBopBoxPlaylist } from '../lib/library'
-import { hashPin, updateSettings, useSettings } from '../lib/store'
+import { hashPin, removeKid, setActiveKid, updateSettings, useSettings } from '../lib/store'
+import { Mascot } from '../components/Mascot'
 import { toast } from '../lib/toast'
 import { BuddyPicker } from './Setup'
 
@@ -31,13 +31,15 @@ type Props = {
   playlists: PlaylistInfo[]
   pickedId?: string
   onApprovedChange: () => void
+  onAddKid: () => void
+  onRenameKid: (name: string) => void
   onAdd: (tracks: Track[]) => Promise<void>
   onRemove: (uri: string) => Promise<void>
   onClose: () => void
   initialTab?: Tab
 }
 
-export function ParentPanel({ me, songs, playlists, pickedId, onApprovedChange, onAdd, onRemove, onClose, initialTab = 'playlists' }: Props) {
+export function ParentPanel({ me, songs, playlists, pickedId, onApprovedChange, onAddKid, onRenameKid, onAdd, onRemove, onClose, initialTab = 'playlists' }: Props) {
   const s = useSettings()
   const [tab, setTab] = useState<Tab>(initialTab)
   const [query, setQuery] = useState('')
@@ -73,6 +75,25 @@ export function ParentPanel({ me, songs, playlists, pickedId, onApprovedChange, 
         </button>
       </header>
 
+      <div className="kid-switch" role="radiogroup" aria-label="Which kid">
+        {s.kids.map((k) => (
+          <button
+            key={k.id}
+            role="radio"
+            aria-checked={k.id === s.kidId}
+            data-theme={k.theme}
+            className={`kid-chip ${k.id === s.kidId ? 'is-on' : ''}`}
+            onClick={() => setActiveKid(k.id)}
+          >
+            <Mascot size={34} accessory={k.accessory} />
+            {k.kidName}
+          </button>
+        ))}
+        <button className="kid-chip kid-chip-add" onClick={onAddKid}>
+          <Icon name="plus" size={16} /> Add a kid
+        </button>
+      </div>
+
       <nav className="tabs" role="tablist">
         {tabs.map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? 'is-on' : ''}`} onClick={() => setTab(t.id)}>
@@ -97,7 +118,7 @@ export function ParentPanel({ me, songs, playlists, pickedId, onApprovedChange, 
             }}
           />
         )}
-        {tab === 'settings' && <Settings me={me} />}
+        {tab === 'settings' && <Settings key={s.kidId} me={me} onRenameKid={onRenameKid} />}
       </div>
     </motion.div>
   )
@@ -496,14 +517,16 @@ function Wishes({ onFind }: { onFind: (q: string) => void }) {
 
 // ── Settings ────────────────────────────────────────────────────────────────
 
-function Settings({ me }: { me: Me | null }) {
+function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: string) => void }) {
   const s = useSettings()
   const [pinOpen, setPinOpen] = useState(false)
   const [first, setFirst] = useState<string | null>(null)
   const [name, setName] = useState(s.kidName)
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   return (
     <section className="settings">
+      <p className="eyebrow">Just for {s.kidName}</p>
       <div className="set-card">
         <h3>Name</h3>
         <input
@@ -513,8 +536,7 @@ function Settings({ me }: { me: Me | null }) {
           onBlur={() => {
             const n = name.trim()
             if (!n || n === s.kidName) return
-            updateSettings({ kidName: n })
-            if (s.playlistId) renamePlaylist(s.playlistId, n).catch(() => {})
+            onRenameKid(n)
           }}
           maxLength={24}
         />
@@ -556,6 +578,35 @@ function Settings({ me }: { me: Me | null }) {
             <b>{s.maxVolume}%</b>
           </div>
         </div>
+      </div>
+
+      {s.kids.length > 1 && (
+        <div className="set-card">
+          <h3>Remove {s.kidName}</h3>
+          <p className="muted small">
+            Takes {s.kidName} off this device. Their songs and mixes stay in your Spotify, and you can add them back any time.
+          </p>
+          {confirmRemove ? (
+            <div className="confirm">
+              <button className="btn-danger" onClick={() => s.kidId && removeKid(s.kidId)}>
+                Remove {s.kidName}
+              </button>
+              <button className="btn-ghost" onClick={() => setConfirmRemove(false)}>
+                Keep
+              </button>
+            </div>
+          ) : (
+            <button className="btn-soft" onClick={() => setConfirmRemove(true)}>
+              Remove from this device
+            </button>
+          )}
+        </div>
+      )}
+
+      <p className="eyebrow set-divider">For everyone on this device</p>
+
+      <div className="set-card">
+        <h3>Colors</h3>
         <Toggle
           label="Cozy night colors"
           hint="Softer, darker colors from 7:30 pm to 6:30 am."

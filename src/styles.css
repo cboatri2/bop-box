@@ -46,6 +46,12 @@
   color-scheme: light;
 }
 
+[data-theme='bubblegum'] {
+  --accent: #ff6fa8;
+  --accent-deep: #e0447f;
+  --accent-soft: #ffe1ee;
+  --accent-ink: #b8235e;
+}
 [data-theme='ocean'] {
   --accent: #4aa8ff;
   --accent-deep: #2a7fd6;
@@ -2455,4 +2461,100 @@ code {
   color: var(--ink);
   margin: 0 0 6px;
   max-width: 640px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Who's listening + kid switcher
+   ───────────────────────────────────────────────────────────────────────── */
+
+.who .logo-lg {
+  font-size: clamp(44px, 10vw, 64px);
+}
+.who .h1 {
+  margin: 18px 0 26px;
+}
+.who-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 22px;
+  max-width: 760px;
+}
+.who-card {
+  width: 168px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 14px 18px;
+  border-radius: var(--r-xl);
+  background: var(--card);
+  box-shadow: 0 7px 0 var(--accent-deep), 0 22px 36px -16px color-mix(in srgb, var(--accent) 70%, transparent);
+  border: 4px solid var(--accent);
+}
+.who-avatar {
+  width: 128px;
+  height: 128px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+}
+.who-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  color: var(--accent-ink);
+}
+.who-grownups {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 34px;
+}
+
+.kid-switch {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: -6px auto 16px;
+  padding: 4px 2px 8px;
+}
+.kid-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px 4px 4px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 3px solid transparent;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--ink-2);
+  box-shadow: 0 3px 0 var(--line);
+}
+.kid-chip.is-on {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.kid-chip-add {
+  padding: 8px 16px;
+  border: 3px dashed var(--line-2);
+  box-shadow: none;
+  background: transparent;
+}
+.existing {
+  margin: 0 0 18px;
+}
+.set-divider {
+  margin-top: 12px;
+}
+
+/* Per-kid color islands (kid chips, "who's listening" cards) keep night-mode softness. */
+[data-night='true'] [data-theme] {
+  --accent-soft: color-mix(in srgb, var(--accent) 22%, #2c2450);
+  --accent-ink: color-mix(in srgb, var(--accent) 60%, white);
 }

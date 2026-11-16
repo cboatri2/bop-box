@@ -6,7 +6,7 @@ import { useToasts } from '../lib/toast'
 
 type IconName =
   | 'play' | 'pause' | 'next' | 'prev' | 'heart' | 'heart-fill' | 'lock' | 'moon' | 'speaker'
-  | 'star' | 'plus' | 'check' | 'trash' | 'search' | 'down' | 'x' | 'dice' | 'back' | 'music' | 'link' | 'grip' | 'pencil' | 'move'
+  | 'star' | 'plus' | 'check' | 'trash' | 'search' | 'down' | 'x' | 'dice' | 'back' | 'music' | 'link' | 'grip' | 'pencil' | 'move' | 'users'
 
 export function Icon({ name, size = 24 }: { name: IconName; size?: number }) {
   const p = {
@@ -59,6 +59,8 @@ export function Icon({ name, size = 24 }: { name: IconName; size?: number }) {
       return <svg {...p}><path d="M14.5 6l-6 6 6 6" strokeWidth="3" /></svg>
     case 'music':
       return <svg {...p}><path d="M9 18V6l10-2v12" /><circle cx="6.5" cy="18" r="2.5" fill="currentColor" /><circle cx="16.5" cy="16" r="2.5" fill="currentColor" /></svg>
+    case 'users':
+      return <svg {...p}><circle cx="9" cy="8.5" r="3.2" /><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" /><circle cx="16.5" cy="9.5" r="2.6" /><path d="M15.5 14.2c2.4-.3 4.4 1.2 5 4.3" /></svg>
     case 'grip':
       return <svg {...p}><circle cx="9" cy="6" r="1.6" fill="currentColor" stroke="none" /><circle cx="15" cy="6" r="1.6" fill="currentColor" stroke="none" /><circle cx="9" cy="12" r="1.6" fill="currentColor" stroke="none" /><circle cx="15" cy="12" r="1.6" fill="currentColor" stroke="none" /><circle cx="9" cy="18" r="1.6" fill="currentColor" stroke="none" /><circle cx="15" cy="18" r="1.6" fill="currentColor" stroke="none" /></svg>
     case 'pencil':

@@ -31,9 +31,10 @@ type Props = {
   loading: boolean
   onOpenPlayer: () => void
   onGrownUps: () => void
+  onSwitchKid?: () => void
 }
 
-export function KidHome({ songs, shelves, mixes, mixOps, loading, onOpenPlayer, onGrownUps }: Props) {
+export function KidHome({ songs, shelves, mixes, mixOps, loading, onOpenPlayer, onGrownUps, onSwitchKid }: Props) {
   const s = useSettings()
   const p = usePlayer()
   const [sel, setSel] = useState<Sel>({ kind: 'all' })
@@ -96,6 +97,11 @@ export function KidHome({ songs, shelves, mixes, mixOps, loading, onOpenPlayer, 
           <p className="hello-sub">What do you want to listen to?</p>
         </div>
         <div className="corner-btns">
+          {onSwitchKid && (
+            <button className="icon-btn" aria-label="Switch who's listening" onClick={onSwitchKid}>
+              <Icon name="users" />
+            </button>
+          )}
           <button className="icon-btn" aria-label="Wish for a song" onClick={() => setWishOpen(true)}>
             <Icon name="star" />
           </button>

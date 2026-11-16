@@ -38,7 +38,7 @@ const pl = (id: string, name: string, n: number, img: number, owner = 'demo'): P
   id, name, description: '', images: [{ url: cover(img) }], owner: { id: owner }, collaborative: false, total: n,
 })
 
-export function demoLibrary(approved: string[]): Library {
+export function demoLibrary(approved: string[], firstKid = true): Library {
   const playlists = [
     pl('car', 'Car Songs 🚗', 6, 3), pl('disney', 'Movie Night', 5, 1), pl('bed', 'Bedtime', 4, 7),
     pl('mine', 'Dad’s Workout Mix', 40, 5), pl('other', 'Today’s Top Hits', 50, 2, 'spotify'),
@@ -49,10 +49,11 @@ export function demoLibrary(approved: string[]): Library {
   return {
     picked: { id: 'picked', name: 'Picked for you', images: [], songs: demoSongs.slice(0, 5) },
     shelves: playlists.filter((p) => approved.includes(p.id)).map((p) => ({ id: p.id, name: p.name, images: p.images, songs: shelfSongs[p.id] ?? [] })),
-    mixes: [
+    mixes: !firstKid ? [] : [
       { id: 'mix1', name: 'Dance Party', emoji: '💃', color: 'grape', songs: [demoSongs[1], demoSongs[5], demoSongs[12], demoSongs[3]] },
       { id: 'mix2', name: 'Sleepy Songs', emoji: '🌙', color: 'ocean', songs: [demoSongs[7], demoSongs[14]] },
     ],
     playlists,
+    boxes: [],
   }
 }

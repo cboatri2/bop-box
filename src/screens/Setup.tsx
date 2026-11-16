@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react'
 import { Mascot } from '../components/Mascot'
 import { PinPad } from '../components/PinPad'
 import { Icon } from '../components/ui'
+import type { KidBox } from '../lib/library'
 import { hashPin, updateSettings, useSettings, type Accessory, type ThemeName } from '../lib/store'
 
 export const THEMES: { id: ThemeName; label: string; color: string }[] = [
@@ -57,10 +58,19 @@ export function BuddyPicker() {
   )
 }
 
-export function Setup({ onDone }: { onDone: () => void }) {
+type SetupProps = {
+  onDone: () => void
+  /** 'add' = another kid on an already set-up device: no PIN step, can be cancelled. */
+  mode?: 'first' | 'add'
+  /** Kids' music boxes already in Spotify that aren't on this device yet. */
+  existing?: KidBox[]
+  onCancel?: () => void
+}
+
+export function Setup({ onDone, mode = 'first', existing = [], onCancel }: SetupProps) {
   const s = useSettings()
   const [step, setStep] = useState(0)
-  const [name, setName] = useState(s.kidName)
+  const [name, setName] = useState(mode === 'add' ? '' : s.kidName)
   const [firstPin, setFirstPin] = useState<string | null>(null)
 
   const onPin = useCallback(
@@ -83,8 +93,29 @@ export function Setup({ onDone }: { onDone: () => void }) {
   const steps = [
     <div key="name" className="setup-step">
       <Mascot size={132} mood="wow" accessory={s.accessory} />
-      <h1 className="h1">Who's listening?</h1>
+      <h1 className="h1">{mode === 'add' ? 'Who else is listening?' : "Who's listening?"}</h1>
       <p className="muted">This little music box will be all theirs.</p>
+      {existing.length > 0 && (
+        <div className="existing">
+          <p className="muted small">Already have a music box in your Spotify:</p>
+          <div className="idea-chips">
+            {existing.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                className="idea"
+                onClick={() => {
+                  setName(b.kidName)
+                  updateSettings({ kidName: b.kidName, playlistId: b.id })
+                  setStep(1)
+                }}
+              >
+                {b.kidName}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <form
         className="name-form"
         onSubmit={(e) => {
@@ -114,7 +145,7 @@ export function Setup({ onDone }: { onDone: () => void }) {
       <h1 className="h1">Pick a music buddy</h1>
       <p className="muted">Choose together! You can change this any time.</p>
       <BuddyPicker />
-      <button className="btn-candy btn-lg" onClick={() => setStep(2)}>
+      <button className="btn-candy btn-lg" onClick={() => (mode === 'add' ? onDone() : setStep(2))}>
         Love it!
       </button>
     </div>,
@@ -129,9 +160,16 @@ export function Setup({ onDone }: { onDone: () => void }) {
     </div>,
   ]
 
+  if (mode === 'add') steps.pop()
+
   return (
     <main className="center-screen">
       <div className="card setup-card">
+        {mode === 'add' && step === 0 && onCancel && (
+          <button className="icon-btn setup-back" aria-label="Cancel" onClick={onCancel}>
+            <Icon name="x" />
+          </button>
+        )}
         <div className="step-dots" aria-hidden="true">
           {steps.map((_, i) => (
             <span key={i} className={i === step ? 'is-on' : i < step ? 'is-done' : ''} />

@@ -284,27 +284,30 @@ export async function listMyPlaylists(): Promise<PlaylistInfo[]> {
   return out
 }
 
-/** Find this app's "Picked for you" playlist, or create it. */
+export const boxName = (kidName: string) => `${kidName || 'My'}'s Bop Box ✨`
+
+/** Find a kid's "Picked for you" playlist, or create it. */
 export async function ensurePlaylist(me: Me, all: PlaylistInfo[], knownId: string | undefined, kidName: string) {
   const mine = all.filter((p) => p.owner.id === me.id)
-  const hit =
-    (knownId && mine.find((p) => p.id === knownId)) ||
-    mine.find((p) => p.description?.includes(MARKER) && !p.description.includes(MIX_MARKER)) ||
-    mine.find((p) => p.name.endsWith('Bop Box ✨'))
+  const hit = (knownId && mine.find((p) => p.id === knownId)) || mine.find((p) => p.name === boxName(kidName))
   if (hit) return hit.id
   const created = await api<{ id: string }>('/me/playlists', {
     method: 'POST',
     body: JSON.stringify({
-      name: `${kidName || 'My'}'s Bop Box ✨`,
+      name: boxName(kidName),
       public: false,
-      description: `Songs a grown-up picked for Bop Box. ${MARKER}`,
+      description: `Songs a grown-up picked for ${kidName || 'a kid'} in Bop Box. ${MARKER}`,
     }),
   })
   return created.id
 }
 
-export const mixDescription = (kidName: string, color: string, emoji: string) =>
-  `A mix ${kidName || 'a kid'} made in Bop Box. ${MIX_MARKER}:${color}:${emoji}]`
+export const mixDescription = (kidName: string, color: string, emoji: string, kidKey?: string) =>
+  `A mix ${kidName || 'a kid'} made in Bop Box. ${MIX_MARKER}:${color}:${emoji}${kidKey ? `:${kidKey}` : ''}]`
+
+/** Mix playlists are named "💃 Dance Party · Max" so grown-ups can tell whose is whose in Spotify. */
+export const mixPlaylistName = (emoji: string, name: string, kidName: string) =>
+  `${emoji} ${name}${kidName ? ` · ${kidName}` : ''}`
 
 export async function createPlaylist(name: string, description: string) {
   return api<{ id: string; name: string }>('/me/playlists', {
@@ -341,7 +344,7 @@ export async function getPlaylistSongs(id: string): Promise<Song[]> {
 }
 
 export const renamePlaylist = (id: string, kidName: string) =>
-  api(`/playlists/${id}`, { method: 'PUT', body: JSON.stringify({ name: `${kidName}'s Bop Box ✨` }) })
+  api(`/playlists/${id}`, { method: 'PUT', body: JSON.stringify({ name: boxName(kidName) }) })
 
 export const addToPlaylist = (id: string, uris: string[], atTop = true) =>
   api(`/playlists/${id}/items`, { method: 'POST', body: JSON.stringify(atTop ? { uris, position: 0 } : { uris }) })

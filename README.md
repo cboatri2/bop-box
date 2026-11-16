@@ -9,6 +9,14 @@ A tiny, private music box for kids. A grown-up picks the songs; the kid can only
 No server and no database. The approved list is a private playlist in the signed-in Spotify account
 (called *"<Name>'s Bop Box ✨"*), so a grown-up can also add songs from the normal Spotify app.
 
+## Several kids
+
+Each device can hold several kid profiles (name, buddy, approved playlists, explicit/volume rules, favorites,
+wishes). With more than one, Bop Box opens on *Who's listening?*. Each kid's "Picked for you" playlist is
+`<Name>'s Bop Box ✨` and their mixes are `<emoji> <Mix> · <Name>`, so the same kid can be linked on another
+device. Spotify plays one stream per account: kids listening at the same time need devices signed in to
+different Spotify accounts.
+
 ## How it works
 
 | Piece | Where |
