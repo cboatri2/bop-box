@@ -250,19 +250,20 @@ code {
   transition: background-color 0.8s ease;
 }
 .blob {
+  /* Soft glow drawn as a gradient (cheap) rather than a live blur filter (expensive on phones). */
   position: absolute;
-  width: 46vmax;
-  height: 46vmax;
+  width: 56vmax;
+  height: 56vmax;
   border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.75;
+  background: radial-gradient(circle closest-side, var(--c) 0%, color-mix(in srgb, var(--c) 55%, transparent) 45%, transparent 100%);
+  opacity: 0.8;
   animation: drift 24s ease-in-out infinite alternate;
-  transition: background-color 0.8s ease;
+  will-change: transform;
 }
-.b1 { background: var(--b1); top: -18vmax; left: -12vmax; }
-.b2 { background: var(--b2); top: 8vmax; right: -20vmax; animation-delay: -6s; animation-duration: 28s; }
-.b3 { background: var(--b3); bottom: -22vmax; left: 10vmax; animation-delay: -12s; animation-duration: 32s; }
-.b4 { background: var(--b4); bottom: -10vmax; right: -14vmax; animation-delay: -3s; }
+.b1 { --c: var(--b1); top: -22vmax; left: -16vmax; }
+.b2 { --c: var(--b2); top: 4vmax; right: -24vmax; animation-delay: -6s; animation-duration: 28s; }
+.b3 { --c: var(--b3); bottom: -26vmax; left: 6vmax; animation-delay: -12s; animation-duration: 32s; }
+.b4 { --c: var(--b4); bottom: -14vmax; right: -18vmax; animation-delay: -3s; }
 
 @keyframes drift {
   0% { transform: translate(0, 0) scale(1); }

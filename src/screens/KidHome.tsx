@@ -235,6 +235,7 @@ export function KidHome({ songs, shelves, mixes, mixOps, loading, onOpenPlayer, 
               key={song.uri}
               song={song}
               tilt={TILTS[i % TILTS.length]}
+              animateIn={i < 24}
               fav={favSet.has(song.uri)}
               playing={!!playingUri && (playingUri === song.uri || playingUri === song.linked_from?.uri)}
               isPlaying={isPlaying}
@@ -320,6 +321,7 @@ function Tile({
 const SongCard = memo(function SongCard({
   song,
   tilt,
+  animateIn,
   fav,
   playing,
   isPlaying,
@@ -327,6 +329,7 @@ const SongCard = memo(function SongCard({
 }: {
   song: Song
   tilt: number
+  animateIn: boolean
   fav: boolean
   playing: boolean
   isPlaying: boolean
@@ -337,7 +340,8 @@ const SongCard = memo(function SongCard({
     <motion.div
       className={`song ${playing ? 'is-current' : ''}`}
       style={{ ['--tilt' as string]: `${tilt}deg` }}
-      variants={{ hide: { opacity: 0, y: 24, scale: 0.9 }, show: { opacity: 1, y: 0, scale: 1 } }}
+      // Only the first rows pop in; big libraries (hundreds of songs) just appear, so phones stay snappy.
+      variants={animateIn ? { hide: { opacity: 0, y: 24, scale: 0.9 }, show: { opacity: 1, y: 0, scale: 1 } } : undefined}
       transition={{ type: 'spring', stiffness: 380, damping: 26 }}
     >
       <button className="song-hit" onClick={onPlay} aria-label={`Play ${song.name} by ${artistNames(song)}`}>

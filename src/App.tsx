@@ -203,7 +203,8 @@ function Main() {
 
   // Switching kids: pause, apply that kid's volume cap, and load their library.
   useEffect(() => {
-    if (!s.setupDone || !s.kidId) return
+    // While a kid is being added they don't have a Spotify account yet; don't load (or create) anything.
+    if (!s.setupDone || !s.kidId || view === 'add-kid') return
     if (!getPlayer().paused) void togglePlay()
     // Different kid, maybe a different Spotify account: forget who "me" is and reconnect the player.
     if (lastKid.current && lastKid.current !== s.kidId) restartPlayer()
@@ -215,7 +216,7 @@ function Main() {
     setLoading(true)
     busy.current = false
     void load()
-  }, [s.kidId, s.setupDone, load])
+  }, [s.kidId, s.setupDone, load, view === 'add-kid'])
 
   useEffect(() => {
     if (!s.setupDone) return

@@ -23,7 +23,9 @@ const TITLES = [
 ]
 
 const day = 24 * 3600 * 1000
-export const demoSongs: Song[] = TITLES.map(([name, artist], i) => ({
+const MANY = typeof location !== 'undefined' && new URLSearchParams(location.search).has('many')
+const ALL_TITLES = MANY ? Array.from({ length: 260 }, (_, i) => [`${TITLES[i % TITLES.length][0]} ${Math.floor(i / TITLES.length) + 1}`, TITLES[i % TITLES.length][1]]) : TITLES
+export const demoSongs: Song[] = ALL_TITLES.map(([name, artist], i) => ({
   id: `demo${i}`,
   uri: `spotify:track:demo${i}`,
   name,
@@ -51,7 +53,7 @@ export function demoLibrary(approved: string[], firstKid = true): Library {
   }
   const all = [...playlists, ...(grownup?.playlists ?? [])]
   return {
-    picked: { id: 'picked', name: 'Picked for you', images: [], songs: demoSongs.slice(0, 5) },
+    picked: { id: 'picked', name: 'Picked for you', images: [], songs: MANY ? demoSongs : demoSongs.slice(0, 5) },
     shelves: all.filter((p) => approved.includes(p.id)).map((p) => ({ id: p.id, name: p.name, images: p.images, songs: shelfSongs[p.id] ?? [] })),
     mixes: !firstKid ? [] : [
       { id: 'mix1', name: 'Dance Party', emoji: '💃', color: 'grape', songs: [demoSongs[1], demoSongs[5], demoSongs[12], demoSongs[3]] },
