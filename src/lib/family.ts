@@ -17,7 +17,10 @@ async function call<T>(method: 'GET' | 'POST', query: string, opts: { token?: st
     headers: { Authorization: `Bearer ${token}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   })
-  if (!res.ok) throw new Error(`grown-up ${query.split('&')[0]} ${res.status}`)
+  if (!res.ok) {
+    const why = await res.json().then((j: { error?: string }) => j.error ?? '', () => '')
+    throw new Error(`grown-up ${query.split('&')[0]} ${res.status}${why ? `: ${why}` : ''}`)
+  }
   return res.json()
 }
 

@@ -31,6 +31,8 @@ async function renew(g: Grownup, etag: string | undefined): Promise<Grownup> {
     // Another request may have renewed it a moment ago: use that one.
     const latest = await readDoc<Grownup>(grownupPath(g.id))
     if (latest && latest.data.refresh !== g.refresh && (latest.data.until ?? 0) > Date.now()) return latest.data
+    const why = await res.text().catch(() => '')
+    console.error(`grown-up renewal failed: ${res.status} ${why.slice(0, 300)}`)
     throw new Error(`renewal failed (${res.status})`)
   }
   const j = (await res.json()) as { access_token: string; refresh_token?: string; expires_in: number }
@@ -71,7 +73,11 @@ async function asGrownup<T>(gid: string, url: string): Promise<T> {
       await new Promise((r) => setTimeout(r, wait))
       continue
     }
-    if (!res.ok) throw new Error(`Spotify said ${res.status}`)
+    if (!res.ok) {
+      const why = await res.text().catch(() => '')
+      console.error(`grown-up read failed: ${res.status} ${url.replace(/\?.*/, '')} ${why.slice(0, 300)}`)
+      throw new Error(`Spotify said ${res.status}${why ? `: ${why.slice(0, 200)}` : ''}`)
+    }
     const data = (await res.json()) as T
     if (cache.size > 300) cache.clear()
     cache.set(gid + url, { data, until: Date.now() + 45_000 })
@@ -194,6 +200,7 @@ export async function GET(req: Request) {
       return json(req, { songs: await songsOf(g, id) })
     }
   } catch (e) {
+    console.error(`grown-up ${op} failed: ${e instanceof Error ? e.message : e}`)
     return json(req, { error: e instanceof Error ? e.message : 'failed' }, 502)
   }
   return json(req, { error: 'unknown op' }, 400)
