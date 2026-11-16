@@ -10,6 +10,9 @@ import {
   AuthError,
   beginLogin,
   completeLoginFromUrl,
+  deviceSignedIn,
+  forgetKidAccount,
+  kidHasOwnAccount,
   createPlaylist,
   retireMix,
   forgetDeviceAccount,
@@ -140,7 +143,7 @@ function Main() {
   }, [])
   const prevKid = useRef<string | null>(null)
   const lastKid = useRef<string | null>(null)
-  const [needsLogin, setNeedsLogin] = useState(false)
+  const [needsLogin, setNeedsLogin] = useState<false | 'signed-out' | 'blocked'>(false)
 
   useEffect(() => initPlayer(getSettings().maxVolume), [])
 
@@ -187,7 +190,7 @@ function Main() {
         // A kid with their own account needs that account signed in again; never fall back to another.
         if (getSettings().ownAccount) {
           logEvent(`${getSettings().kidName}'s own account needs signing in again`)
-          setNeedsLogin(true)
+          setNeedsLogin('signed-out')
           return
         }
         // Only the shared device account needs signing in again; kids' own accounts stay signed in.
@@ -197,6 +200,13 @@ function Main() {
         return
       }
       const status = e instanceof SpotifyError ? e.status : 0
+      // A kid's own account that Spotify won't let in (not on the app's allowed users list).
+      if (status === 403 && kidHasOwnAccount(getSettings().kidId)) {
+        logEvent(`Spotify won't let ${getSettings().kidName}'s own account into Bop Box (403${(e as Error).message ? `: ${(e as Error).message}` : ''})`)
+        meRef.current = null
+        setNeedsLogin('blocked')
+        return
+      }
       logEvent(
         status
           ? `Loading songs failed (Spotify said ${status}: ${(e as Error).message})`
@@ -366,16 +376,44 @@ function Main() {
     )
   }
 
+  const switchToDeviceAccount = () => {
+    if (!s.kidId) return
+    forgetKidAccount(s.kidId)
+    updateSettings({ ownAccount: false })
+    logEvent(`${s.kidName} switched back to this device's account`)
+    window.location.reload()
+  }
+
   if (needsLogin && view === 'kid') {
     return (
       <main className="center-screen">
         <div className="card setup-card">
           <Mascot size={130} mood="sleepy" accessory={s.accessory} />
-          <h1 className="h1">{s.kidName} needs to sign in again</h1>
-          <p className="muted">Spotify signed {s.kidName}'s account out. A grown-up can sign it back in.</p>
-          <button className="btn-candy btn-lg" onClick={() => s.kidId && void beginLogin('main', s.kidId)}>
-            Sign in with {s.kidName}'s Spotify
-          </button>
+          {needsLogin === 'blocked' ? (
+            <>
+              <h1 className="h1">Spotify won't let this account in yet</h1>
+              <p className="muted">
+                The Spotify account {s.kidName} is signed in with isn't on Bop Box's list of allowed users. A grown-up can
+                add it in Spotify's developer dashboard, or switch {s.kidName} back to this device's account.
+              </p>
+              {deviceSignedIn() && (
+                <button className="btn-candy btn-lg" onClick={switchToDeviceAccount}>
+                  Use this device's account
+                </button>
+              )}
+              <button className="btn-soft" onClick={() => s.kidId && void beginLogin('main', s.kidId)}>
+                Sign in with a different account
+              </button>
+            </>
+          ) : (
+            <>
+              <h1 className="h1">{s.kidName} needs to sign in again</h1>
+              <p className="muted">Spotify signed {s.kidName}'s account out. A grown-up can sign it back in.</p>
+              <button className="btn-candy btn-lg" onClick={() => s.kidId && void beginLogin('main', s.kidId)}>
+                Sign in with {s.kidName}'s Spotify
+              </button>
+            </>
+          )}
           {s.kids.length > 1 && (
             <button className="link-btn" onClick={() => setPicking(true)}>
               Switch who's listening

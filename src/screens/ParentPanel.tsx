@@ -21,9 +21,10 @@ import {
   type PlaylistInfo,
   type Song,
   type Track,
+  forgetKidAccount,
 } from '../lib/spotify'
 import { isBopBoxPlaylist, type Library } from '../lib/library'
-import { clearLog, readLog } from '../lib/log'
+import { clearLog, logEvent, readLog } from '../lib/log'
 import { hashPin, removeKid, setActiveKid, updateSettings, useSettings } from '../lib/store'
 import { Mascot } from '../components/Mascot'
 import { toast } from '../lib/toast'
@@ -610,6 +611,20 @@ function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: stri
         <button className="btn-soft" onClick={() => s.kidId && void beginLogin('main', s.kidId)}>
           {ownAccount ? 'Switch account' : `Sign in with ${s.kidName}'s own Spotify`}
         </button>
+        {ownAccount && deviceSignedIn() && (
+          <button
+            className="link-btn"
+            onClick={() => {
+              if (!s.kidId) return
+              forgetKidAccount(s.kidId)
+              updateSettings({ ownAccount: false })
+              logEvent(`${s.kidName} switched back to this device's account`)
+              window.location.reload()
+            }}
+          >
+            Use this device's account instead
+          </button>
+        )}
       </div>
       <div className="set-card">
         <h3>Name</h3>
