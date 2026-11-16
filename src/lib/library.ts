@@ -37,6 +37,8 @@ export function isBopBoxPlaylist(p: PlaylistInfo, pickedId?: string) {
   const s = getSettings()
   return (
     p.id === pickedId ||
+    s.deletedMixes.includes(p.id) ||
+    p.name === 'Deleted Bop Box mix' ||
     !!p.description?.includes('[bopbox') ||
     BOX_RE.test(p.name) ||
     !!s.mixMeta[p.id] ||
@@ -75,7 +77,7 @@ export async function loadLibrary(me: Me): Promise<Library> {
   // Older untagged mixes go to the first kid on the device.
   const isFirstKid = st.kids[0]?.id === st.kidId
   const mixInfos = playlists
-    .filter((p) => p.owner.id === me.id && p.id !== pickedId)
+    .filter((p) => p.owner.id === me.id && p.id !== pickedId && !st.deletedMixes.includes(p.id))
     .map((p) => ({ p, meta: mixMeta(p) }))
     .filter((x): x is { p: PlaylistInfo; meta: Meta } => {
       if (!x.meta) return false

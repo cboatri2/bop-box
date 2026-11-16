@@ -11,7 +11,7 @@ import {
   beginLogin,
   completeLoginFromUrl,
   createPlaylist,
-  deletePlaylist,
+  retireMix,
   getMe,
   isLoggedIn,
   logout,
@@ -19,6 +19,7 @@ import {
   mixPlaylistName,
   removeFromPlaylist,
   renamePlaylist,
+  SpotifyError,
   replacePlaylistItems,
   updatePlaylistDetails,
   type Me,
@@ -112,6 +113,7 @@ function Main() {
   const [speakerOpen, setSpeakerOpen] = useState(false)
   const meRef = useRef<Me | null>(null)
   const busy = useRef(false)
+  const edits = useRef(0) // bumped by every mix change, so a refresh that started earlier can't undo it
   // With several kids on one device, start by asking who's listening.
   const [picking, setPicking] = useState(() => getSettings().kids.length > 1)
   const [gateNext, setGateNext] = useState<'parent' | 'add-kid'>('parent')
@@ -160,11 +162,13 @@ function Main() {
         return
       }
       const kidAtStart = getSettings().kidId
+      const editsAtStart = edits.current
       const m = meRef.current ?? (await getMe())
       meRef.current = m
       setMe(m)
       const next = await loadLibrary(m)
-      if (getSettings().kidId === kidAtStart) setLib(next) // ignore a load for a kid we've switched away from
+      // Ignore a load for a kid we've switched away from, or one that started before a mix edit.
+      if (getSettings().kidId === kidAtStart && edits.current === editsAtStart) setLib(next)
     } catch (e) {
       if (e instanceof AuthError && e.acct === 'main') {
         // A kid with their own account needs that account signed in again; never fall back to another.
@@ -238,12 +242,15 @@ function Main() {
   }, [])
 
   // ── Kid's mixes ──
-  const patchMix = (id: string, fn: (m: Mix) => Mix | null) =>
+  const patchMix = (id: string, fn: (m: Mix) => Mix | null) => {
+    edits.current++
     setLib((L) => L && { ...L, mixes: L.mixes.map((m) => (m.id === id ? fn(m) : m)).filter((m): m is Mix => !!m) })
+  }
 
   const mixOps: MixOps = useMemo(
     () => ({
       async create(name, emoji, color) {
+        edits.current++
         try {
           const st = getSettings()
           const pl = await createPlaylist(
@@ -269,16 +276,18 @@ function Main() {
         }).catch(() => toast("Couldn't save that.", '😕'))
       },
       async remove(id) {
+        // Gone right away on this device, and remembered as deleted so it can't come back.
+        patchMix(id, () => null)
+        updateSettings((st) => {
+          const { [id]: _gone, ...rest } = st.mixMeta
+          void _gone
+          return { mixMeta: rest, deletedMixes: [...st.deletedMixes.filter((x) => x !== id), id] }
+        })
         try {
-          await deletePlaylist(id)
-          patchMix(id, () => null)
-          updateSettings((st) => {
-            const { [id]: _gone, ...rest } = st.mixMeta
-            void _gone
-            return { mixMeta: rest }
-          })
-        } catch {
-          toast("Couldn't delete that mix.", '😕')
+          await retireMix(id)
+        } catch (e) {
+          const code = e instanceof SpotifyError ? ` (Spotify said ${e.status})` : ''
+          toast(`Removed here, but Spotify didn't confirm${code}.`, '😕')
         }
       },
       async addSong(id, song) {

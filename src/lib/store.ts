@@ -33,6 +33,7 @@ type Device = {
   kids: Kid[]
   activeKidId: string | null
   mixMeta: Record<string, { emoji: string; color: ThemeName; kid?: string }> // fallback if Spotify hides descriptions
+  deletedMixes: string[] // playlist ids deleted here, so they never come back even if Spotify is slow to forget
 }
 
 export type Settings = Device & Omit<Kid, 'id'> & { kidId: string | null }
@@ -62,6 +63,7 @@ const deviceDefaults: Device = {
   kids: [],
   activeKidId: null,
   mixMeta: {},
+  deletedMixes: [],
 }
 
 function load(): Device {

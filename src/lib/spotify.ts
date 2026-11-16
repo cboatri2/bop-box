@@ -410,6 +410,15 @@ export const replacePlaylistItems = (id: string, uris: string[]) =>
 export const deletePlaylist = (id: string) =>
   api(`/me/library?uris=${encodeURIComponent(`spotify:playlist:${id}`)}`, { method: 'DELETE' })
 
+/**
+ * Delete a kid's mix. First strip its Bop Box label (so no device treats it as a mix even if
+ * Spotify keeps it around), then remove it from the account's library.
+ */
+export async function retireMix(id: string) {
+  await updatePlaylistDetails(id, { name: 'Deleted Bop Box mix', description: 'Deleted in Bop Box.' }).catch(() => {})
+  await deletePlaylist(id)
+}
+
 type PlaylistEntry = { added_at: string; item?: Track | null; track?: Track | null }
 
 export async function getPlaylistSongs(id: string, acct: Acct = 'main'): Promise<Song[]> {
