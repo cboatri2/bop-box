@@ -119,6 +119,8 @@ function Main() {
   const [speakerOpen, setSpeakerOpen] = useState(false)
   const meRef = useRef<Me | null>(null)
   const busy = useRef(false)
+  const retryTimer = useRef(0)
+  const retries = useRef(0)
   const edits = useRef(0) // bumped by every mix change, so a refresh that started earlier can't undo it
   // With several kids on one device, start by asking who's listening.
   // "Who's listening?" only appears when someone taps 👥 (or no kid has been picked on this device yet).
@@ -179,6 +181,7 @@ function Main() {
       const next = await loadLibrary(m)
       // Ignore a load for a kid we've switched away from, or one that started before a mix edit.
       if (getSettings().kidId === kidAtStart && edits.current === editsAtStart) setLib(next)
+      retries.current = 0
     } catch (e) {
       if (e instanceof AuthError && e.acct === 'main') {
         // A kid with their own account needs that account signed in again; never fall back to another.
@@ -193,8 +196,24 @@ function Main() {
         window.location.reload()
         return
       }
-      if (e instanceof SpotifyError) logEvent(`Loading songs failed (Spotify said ${e.status}: ${e.message})`)
-      toast("Couldn't load songs. Check the internet?", '📡')
+      const status = e instanceof SpotifyError ? e.status : 0
+      logEvent(
+        status
+          ? `Loading songs failed (Spotify said ${status}: ${(e as Error).message})`
+          : `Loading songs failed (${e instanceof Error ? e.message : 'unknown'})`,
+      )
+      if (status === 403) toast("Spotify won't let this account into Bop Box (403). Grown-ups: see Settings → Troubleshooting.", '🔒')
+      else if (status === 429) toast('Spotify is busy right now. Trying again in a moment…', '⏳')
+      else if (status) toast(`Spotify had a hiccup (${status}). Trying again in a moment…`, '😕')
+      else toast("Couldn't reach Spotify. Check the internet?", '📡')
+      // Try once more on our own after a pause (not for "not allowed", which won't fix itself).
+      if (status !== 403 && !retryTimer.current && retries.current < 2) {
+        retries.current++
+        retryTimer.current = window.setTimeout(() => {
+          retryTimer.current = 0
+          void load()
+        }, status === 429 ? 15_000 : 5_000)
+      }
     } finally {
       busy.current = false
       setLoading(false)

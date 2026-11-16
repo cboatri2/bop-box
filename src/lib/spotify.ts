@@ -294,19 +294,40 @@ export class SpotifyError extends Error {
 
 type Init = RequestInit & { acct?: Acct }
 
-async function api<T = unknown>(path: string, init: Init = {}, retried = false): Promise<T> {
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+async function api<T = unknown>(path: string, init: Init = {}, retried = false, attempt = 0): Promise<T> {
   if (DEMO) return (init.method === 'POST' && path === '/me/playlists' ? { id: `demo-${Date.now()}` } : undefined) as T
   const { acct = 'main', ...req } = init
   const token = await getAccessToken(retried, acct)
-  const res = await fetch(path.startsWith('http') ? path : API + path, {
-    ...req,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(req.body ? { 'Content-Type': 'application/json' } : {}),
-      ...req.headers,
-    },
-  })
-  if (res.status === 401 && !retried) return api<T>(path, init, true)
+  const safeToRepeat = !req.method || req.method === 'GET'
+  let res: Response
+  try {
+    res = await fetch(path.startsWith('http') ? path : API + path, {
+      ...req,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(req.body ? { 'Content-Type': 'application/json' } : {}),
+        ...req.headers,
+      },
+    })
+  } catch (e) {
+    // A dropped connection (common on phones switching networks): try a reading request again once.
+    if (safeToRepeat && attempt < 1) {
+      await wait(1200)
+      return api<T>(path, init, retried, attempt + 1)
+    }
+    throw e
+  }
+  if (res.status === 401 && !retried) return api<T>(path, init, true, attempt)
+  // Spotify asks apps to slow down with 429 (and has the odd hiccup with 5xx): wait and try again.
+  if ((res.status === 429 || (res.status >= 500 && safeToRepeat)) && attempt < 3) {
+    const after = Number(res.headers.get('Retry-After'))
+    const ms = Math.min(after > 0 ? after * 1000 : 1500 * 2 ** attempt, 10_000)
+    if (attempt === 0) logEvent(`Spotify said ${res.status}; waiting ${Math.round(ms / 1000)}s and trying again`)
+    await wait(ms)
+    return api<T>(path, init, retried, attempt + 1)
+  }
   const text = await res.text()
   const body = text ? safeJson(text) : undefined
   if (!res.ok) {

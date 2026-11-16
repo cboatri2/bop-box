@@ -1,6 +1,8 @@
 import * as sp from './spotify'
 import type { Image, Me, PlaylistInfo, Song } from './spotify'
 import { getSettings, updateSettings, type ThemeName } from './store'
+import { logEvent } from './log'
+import { toast } from './toast'
 
 // One kid's music library:
 //   • "Picked for you": the kid's own Bop Box playlist that songs get added to one at a time
@@ -86,11 +88,15 @@ export async function loadLibrary(me: Me): Promise<Library> {
       return isFirstKid && !st.kids.some((k) => k.kidName && x.p.name.endsWith(` · ${k.kidName}`))
     })
 
-  const [pickedSongs, shelfSongs, mixSongs] = await Promise.all([
-    sp.getPlaylistSongs(pickedId),
-    Promise.all(shelfInfos.map(({ p, acct }) => sp.getPlaylistSongs(p.id, acct).catch(() => [] as Song[]))),
-    Promise.all(mixInfos.map(({ p }) => sp.getPlaylistSongs(p.id).catch(() => [] as Song[]))),
-  ])
+  // A few playlists at a time, so a big library doesn't trip Spotify's rate limit.
+  const pickedSongs = await sp.getPlaylistSongs(pickedId)
+  const shelfSongs = await inBatches(shelfInfos, ({ p, acct }) =>
+    sp.getPlaylistSongs(p.id, acct).catch((e) => {
+      logEvent(`Couldn't read the "${p.name}" shelf (${why(e)})`)
+      return [] as Song[]
+    }),
+  )
+  const mixSongs = await inBatches(mixInfos, ({ p }) => sp.getPlaylistSongs(p.id).catch(() => [] as Song[]))
 
   return {
     picked: { id: pickedId, name: 'Picked for you', images: [], songs: pickedSongs.sort(byNewest) },
@@ -117,9 +123,24 @@ async function loadGrownup(): Promise<Library['grownup']> {
     const [me, all] = await Promise.all([sp.getMe('grownup'), sp.listMyPlaylists('grownup')])
     return { me, playlists: all.filter((p) => p.owner.id === me.id || p.collaborative) }
   } catch (e) {
+    logEvent(`Couldn't read the grown-up's playlists (${why(e)})`)
     if (e instanceof sp.AuthError) sp.disconnectGrownup()
+    else if (e instanceof sp.SpotifyError && e.status === 403) {
+      // In Spotify's developer mode, only accounts listed under User Management may use the app.
+      sp.disconnectGrownup()
+      toast("Spotify won't let that account into Bop Box yet. It needs adding to the app's allowed users first.", '🔒')
+    }
     return null
   }
+}
+
+const why = (e: unknown) =>
+  e instanceof sp.SpotifyError ? `Spotify said ${e.status}: ${e.message}` : e instanceof Error ? e.message : 'unknown'
+
+async function inBatches<T, R>(items: T[], fn: (x: T) => Promise<R>, size = 3): Promise<R[]> {
+  const out: R[] = []
+  for (let i = 0; i < items.length; i += size) out.push(...(await Promise.all(items.slice(i, i + size).map(fn))))
+  return out
 }
 
 /** Everything the kid is allowed to hear: picked + approved shelves, minus explicit songs if hidden. */
