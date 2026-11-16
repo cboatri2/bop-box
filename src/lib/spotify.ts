@@ -118,6 +118,7 @@ export function logout() {
 }
 
 export function disconnectGrownup() {
+  pass = null
   if (DEMO) localStorage.removeItem('bopbox.demo.grownup')
   writeToken(null, GROWNUP_KEY)
 }
@@ -296,7 +297,22 @@ export async function grownupSignIn(): Promise<{ access: string; refresh: string
   return t ? { access, refresh: t.refresh } : null
 }
 
+// The family's grown-up connection (see lib/family.ts) hands out short read-only passes.
+type Pass = { access: string; until: number }
+let passSource: (fresh: boolean) => Promise<Pass | null> = async () => null
+let pass: Pass | null = null
+export function setGrownupPassSource(fn: (fresh: boolean) => Promise<Pass | null>) {
+  passSource = fn
+  pass = null
+}
+
 export async function getAccessToken(force = false, acct: Acct = 'main'): Promise<string> {
+  if (acct === 'grownup' && !DEMO && !readToken('grownup', GROWNUP_KEY)) {
+    if (!force && pass && pass.until > Date.now()) return pass.access
+    pass = await passSource(force)
+    if (!pass) throw new AuthError('grownup')
+    return pass.access
+  }
   const key = keyFor(acct)
   const t = readToken(acct, key)
   if (!t) throw new AuthError(acct)

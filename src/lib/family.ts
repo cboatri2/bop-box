@@ -1,9 +1,20 @@
 import { API_BASE } from './api'
 import { logEvent } from './log'
-import { accountTokensOnDevice, disconnectGrownup, getAccessToken, grownupSignIn, type PlaylistInfo, type Song } from './spotify'
+import {
+  accountTokensOnDevice,
+  disconnectGrownup,
+  getAccessToken,
+  getPlaylistSongs,
+  grownupSignIn,
+  listMyPlaylists,
+  setGrownupPassSource,
+  type PlaylistInfo,
+  type Song,
+} from './spotify'
 
 // The family's grown-up connection, kept on Bop Box's server (see api/grownup.ts): a grown-up
 // connects once, and every kid's device can show their playlists. Read-only, always.
+// The server hands this device a short read-only pass; the device reads the playlists from Spotify itself.
 
 export const familyAvailable = () => API_BASE !== null
 const URL_ = API_BASE && `${API_BASE}/grownup`
@@ -51,33 +62,41 @@ export async function shareGrownupWithFamily(): Promise<string | null> {
 let linked: boolean | null = null // null = not checked yet this session
 export const familyLinked = () => linked === true
 
+type TokenReply = { connected?: boolean; grownup?: { id: string; display_name: string | null }; access?: string; until?: number }
+
+if (URL_) {
+  setGrownupPassSource(async (fresh) => {
+    const r = await call<TokenReply>('GET', `op=token${fresh ? '&fresh=1' : ''}`)
+    return r.access && r.until ? { access: r.access, until: r.until } : null
+  })
+}
+
 /** The grown-up's playlists via the family connection, or null when this family hasn't connected one. */
 export async function familyGrownup(): Promise<FamilyGrownup | null> {
   if (!URL_) return null
   try {
-    let r = await call<{ grownup?: { id: string; display_name: string | null }; playlists?: PlaylistInfo[]; connected?: false }>('GET', 'op=playlists')
+    let r = await call<TokenReply>('GET', 'op=status')
     if (!r.grownup && linked === null) {
       // Maybe another account on this device is already in the family: link this one too, then retry.
       linked = false
       const accounts = await accountTokensOnDevice()
       if (accounts.length > 1) {
         const l = await call<{ connected: boolean }>('POST', 'op=link', { body: { accounts } })
-        if (l.connected) r = await call('GET', 'op=playlists')
+        if (l.connected) r = await call('GET', 'op=status')
       }
     }
     if (!r.grownup) return null
     linked = true
-    return { me: r.grownup, playlists: r.playlists ?? [] }
+    const me = r.grownup
+    const playlists = (await listMyPlaylists('grownup')).filter((p) => p.owner.id === me.id || p.collaborative)
+    return { me, playlists }
   } catch (e) {
     logEvent(`Couldn't load the family's grown-up playlists (${e instanceof Error ? e.message : 'unknown'})`)
     return null
   }
 }
 
-export async function familyGrownupSongs(playlistId: string): Promise<Song[]> {
-  const r = await call<{ songs: Song[] }>('GET', `op=songs&id=${encodeURIComponent(playlistId)}`)
-  return r.songs
-}
+export const familyGrownupSongs = (playlistId: string): Promise<Song[]> => getPlaylistSongs(playlistId, 'grownup')
 
 export async function disconnectFamilyGrownup() {
   disconnectGrownup()
