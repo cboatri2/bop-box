@@ -45,8 +45,10 @@ export default function App() {
       return
     }
     completeLoginFromUrl()
-      .then((err) => {
-        if (err) toast(err, '😕')
+      .then(({ error, acct }) => {
+        if (error) toast(error, '😕')
+        // A grown-up just connected their playlists from inside the grown-up corner: go back there.
+        else if (acct === 'grownup') sessionStorage.setItem('bopbox.justConnected', '1')
       })
       .catch(() => toast('Spotify sign-in failed. Please try again.', '😕'))
       .finally(() => setBoot(isLoggedIn() ? 'in' : 'out'))
@@ -105,6 +107,15 @@ function Main() {
   // With several kids on one device, start by asking who's listening.
   const [picking, setPicking] = useState(() => getSettings().kids.length > 1)
   const [gateNext, setGateNext] = useState<'parent' | 'add-kid'>('parent')
+
+  // Returning from connecting a grown-up's playlists: reopen the grown-up corner (that flow started there).
+  useEffect(() => {
+    if (sessionStorage.getItem('bopbox.justConnected')) {
+      sessionStorage.removeItem('bopbox.justConnected')
+      setPicking(false)
+      setView('parent')
+    }
+  }, [])
   const prevKid = useRef<string | null>(null)
 
   useEffect(() => initPlayer(getSettings().maxVolume), [])
@@ -372,6 +383,7 @@ function Main() {
             me={me}
             songs={picked}
             playlists={lib?.playlists ?? []}
+            grownup={lib?.grownup ?? null}
             pickedId={lib?.picked.id}
             onApprovedChange={() => void load()}
             onAddKid={startAddKid}

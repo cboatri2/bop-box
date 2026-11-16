@@ -6,6 +6,8 @@ import { setMaxVolume } from '../lib/player'
 import {
   art,
   artistNames,
+  beginLogin,
+  disconnectGrownup,
   getAlbumTracks,
   getPlaylistSongs,
   getTrack,
@@ -17,7 +19,7 @@ import {
   type Song,
   type Track,
 } from '../lib/spotify'
-import { isBopBoxPlaylist } from '../lib/library'
+import { isBopBoxPlaylist, type Library } from '../lib/library'
 import { hashPin, removeKid, setActiveKid, updateSettings, useSettings } from '../lib/store'
 import { Mascot } from '../components/Mascot'
 import { toast } from '../lib/toast'
@@ -29,6 +31,7 @@ type Props = {
   me: Me | null
   songs: Song[]
   playlists: PlaylistInfo[]
+  grownup: Library['grownup']
   pickedId?: string
   onApprovedChange: () => void
   onAddKid: () => void
@@ -39,7 +42,7 @@ type Props = {
   initialTab?: Tab
 }
 
-export function ParentPanel({ me, songs, playlists, pickedId, onApprovedChange, onAddKid, onRenameKid, onAdd, onRemove, onClose, initialTab = 'playlists' }: Props) {
+export function ParentPanel({ me, songs, playlists, grownup, pickedId, onApprovedChange, onAddKid, onRenameKid, onAdd, onRemove, onClose, initialTab = 'playlists' }: Props) {
   const s = useSettings()
   const [tab, setTab] = useState<Tab>(initialTab)
   const [query, setQuery] = useState('')
@@ -106,7 +109,7 @@ export function ParentPanel({ me, songs, playlists, pickedId, onApprovedChange, 
 
       <div className="parent-body">
         {tab === 'playlists' && (
-          <ApprovedPlaylists me={me} playlists={playlists} pickedId={pickedId} onChange={onApprovedChange} onAddSongs={() => setTab('add')} />
+          <ApprovedPlaylists me={me} playlists={playlists} grownup={grownup} pickedId={pickedId} onChange={onApprovedChange} onAddSongs={() => setTab('add')} />
         )}
         {tab === 'add' && <AddSongs songs={songs} onAdd={onAdd} query={query} setQuery={setQuery} />}
         {tab === 'list' && <SongList songs={songs} onRemove={onRemove} onAddMore={() => setTab('add')} />}
@@ -129,12 +132,14 @@ export function ParentPanel({ me, songs, playlists, pickedId, onApprovedChange, 
 function ApprovedPlaylists({
   me,
   playlists,
+  grownup,
   pickedId,
   onChange,
   onAddSongs,
 }: {
   me: Me | null
   playlists: PlaylistInfo[]
+  grownup: Library['grownup']
   pickedId?: string
   onChange: () => void
   onAddSongs: () => void
@@ -145,6 +150,8 @@ function ApprovedPlaylists({
   const yours = playlists.filter((p) => !isBopBoxPlaylist(p, pickedId))
   const readable = yours.filter((p) => p.owner.id === me?.id || p.collaborative)
   const others = yours.length - readable.length
+  const grownupName = grownup?.me.display_name || 'your'
+  const [confirmOff, setConfirmOff] = useState(false)
 
   const toggle = (id: string) => {
     updateSettings((st) => ({
@@ -155,14 +162,86 @@ function ApprovedPlaylists({
     onChange()
   }
 
+  const row = (p: PlaylistInfo, owner?: string) => (
+    <li key={p.id} className="row">
+      {p.images[0] ? <img className="row-art" src={p.images[0].url} alt="" loading="lazy" /> : <span className="wish-star">🎵</span>}
+      <div className="row-text">
+        <span className="row-title">{p.name}</span>
+        <span className="row-sub">
+          {p.total} {p.total === 1 ? 'song' : 'songs'}
+          {p.owner.id !== owner && ' · collaborative'}
+        </span>
+      </div>
+      <button
+        role="switch"
+        aria-checked={approved.has(p.id)}
+        aria-label={`Let ${name} play ${p.name}`}
+        className={`switch ${approved.has(p.id) ? 'is-on' : ''}`}
+        onClick={() => toggle(p.id)}
+      >
+        <motion.span layout className="switch-knob" transition={{ type: 'spring', stiffness: 600, damping: 34 }} />
+      </button>
+    </li>
+  )
+
   return (
     <section>
       <p className="lead">
-        Turn on the playlists {name} can listen to. Each one becomes a shelf in {name}'s music box. Add songs to them in
-        the Spotify app any time and they show up here automatically.
+        Turn on the playlists {name} can listen to. Each one becomes a shelf in {name}'s music box, and stays in sync:
+        add or remove songs in Spotify and Bop Box follows.
       </p>
       {s.hideExplicit && <p className="muted small">Explicit songs stay hidden, even inside these playlists.</p>}
 
+      {grownup ? (
+        <>
+          <div className="list-head">
+            <h3>From {grownupName === 'your' ? 'your' : `${grownupName}'s`} Spotify</h3>
+            {confirmOff ? (
+              <span className="confirm">
+                <button
+                  className="btn-danger"
+                  onClick={() => {
+                    disconnectGrownup()
+                    setConfirmOff(false)
+                    onChange()
+                  }}
+                >
+                  Disconnect
+                </button>
+                <button className="btn-ghost" onClick={() => setConfirmOff(false)}>
+                  Keep
+                </button>
+              </span>
+            ) : (
+              <button className="link-btn inline" onClick={() => setConfirmOff(true)}>
+                Disconnect
+              </button>
+            )}
+          </div>
+          <ul className="rows">{grownup.playlists.filter((p) => !isBopBoxPlaylist(p)).map((p) => row(p, grownup.me.id))}</ul>
+          {grownup.playlists.length === 0 && <p className="muted center">No playlists in that account yet.</p>}
+        </>
+      ) : (
+        <div className="connect-card">
+          <span className="connect-icon">
+            <Icon name="link" size={26} />
+          </span>
+          <div>
+            <b>Use playlists from your own Spotify</b>
+            <p>
+              Already have playlists for the kids in another account? Connect it once on this device. Bop Box can
+              only <em>read</em> its playlists. It can't play, change or delete anything there.
+            </p>
+            <button className="btn-candy" onClick={() => void beginLogin('grownup')}>
+              Connect a grown-up's Spotify
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="list-head">
+        <h3>From this device's account{me?.display_name ? ` (${me.display_name})` : ''}</h3>
+      </div>
       <ul className="rows">
         <li className="row">
           <span className="wish-star">✨</span>
@@ -174,29 +253,8 @@ function ApprovedPlaylists({
             <Icon name="plus" size={18} /> Add songs
           </button>
         </li>
-        {readable.map((p) => (
-          <li key={p.id} className="row">
-            {p.images[0] ? <img className="row-art" src={p.images[0].url} alt="" loading="lazy" /> : <span className="wish-star">🎵</span>}
-            <div className="row-text">
-              <span className="row-title">{p.name}</span>
-              <span className="row-sub">
-                {p.total} {p.total === 1 ? 'song' : 'songs'}
-                {p.owner.id !== me?.id && ' · collaborative'}
-              </span>
-            </div>
-            <button
-              role="switch"
-              aria-checked={approved.has(p.id)}
-              aria-label={`Let ${name} play ${p.name}`}
-              className={`switch ${approved.has(p.id) ? 'is-on' : ''}`}
-              onClick={() => toggle(p.id)}
-            >
-              <motion.span layout className="switch-knob" transition={{ type: 'spring', stiffness: 600, damping: 34 }} />
-            </button>
-          </li>
-        ))}
+        {readable.map((p) => row(p, me?.id))}
       </ul>
-      {readable.length === 0 && <p className="muted center">No playlists yet. Make one in the Spotify app and it'll show up here.</p>}
       {others > 0 && (
         <p className="muted small center">
           {others} playlist{others === 1 ? '' : 's'} made by other people {others === 1 ? 'is' : 'are'} hidden. Spotify

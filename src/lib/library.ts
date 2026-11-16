@@ -17,6 +17,7 @@ export type Library = {
   mixes: Mix[]
   playlists: PlaylistInfo[] // everything in the account, for the grown-up picker
   boxes: KidBox[] // every kid's Bop Box in this account (to link kids on another device)
+  grownup: { me: Me; playlists: PlaylistInfo[] } | null // read-only grown-up connection, if any
 }
 
 const MIX_RE = /\[bopbox-mix:(\w+):([^\]:]+)(?::(\w+))?\]/
@@ -53,12 +54,22 @@ const byNewest = (a: Song, b: Song) => b.addedAt.localeCompare(a.addedAt)
 
 export async function loadLibrary(me: Me): Promise<Library> {
   const st = getSettings()
-  const playlists = await sp.listMyPlaylists()
+  const [playlists, grownup] = await Promise.all([sp.listMyPlaylists(), loadGrownup()])
   const pickedId = await sp.ensurePlaylist(me, playlists, st.playlistId, st.kidName)
   if (pickedId !== st.playlistId) updateSettings({ playlistId: pickedId })
 
+  // Approved playlists can come from this account or the connected grown-up's account.
   const approved = new Set(st.approvedPlaylists)
-  const shelfInfos = playlists.filter((p) => approved.has(p.id) && p.id !== pickedId)
+  const seen = new Set<string>()
+  const shelfInfos: { p: PlaylistInfo; acct: sp.Acct }[] = []
+  for (const [list, acct] of [[playlists, 'main'], [grownup?.playlists ?? [], 'grownup']] as const) {
+    for (const p of list) {
+      if (approved.has(p.id) && p.id !== pickedId && !seen.has(p.id)) {
+        seen.add(p.id)
+        shelfInfos.push({ p, acct })
+      }
+    }
+  }
 
   // A mix belongs to this kid if it's tagged with their box, or named "… · Name".
   // Older untagged mixes go to the first kid on the device.
@@ -75,13 +86,13 @@ export async function loadLibrary(me: Me): Promise<Library> {
 
   const [pickedSongs, shelfSongs, mixSongs] = await Promise.all([
     sp.getPlaylistSongs(pickedId),
-    Promise.all(shelfInfos.map((p) => sp.getPlaylistSongs(p.id).catch(() => [] as Song[]))),
+    Promise.all(shelfInfos.map(({ p, acct }) => sp.getPlaylistSongs(p.id, acct).catch(() => [] as Song[]))),
     Promise.all(mixInfos.map(({ p }) => sp.getPlaylistSongs(p.id).catch(() => [] as Song[]))),
   ])
 
   return {
     picked: { id: pickedId, name: 'Picked for you', images: [], songs: pickedSongs.sort(byNewest) },
-    shelves: shelfInfos.map((p, i) => ({ id: p.id, name: p.name, images: p.images, songs: shelfSongs[i] })),
+    shelves: shelfInfos.map(({ p }, i) => ({ id: p.id, name: p.name, images: p.images, songs: shelfSongs[i] })),
     mixes: mixInfos.map(({ p, meta }, i) => ({
       id: p.id,
       name: mixName(p.name, meta.emoji, st.kidName),
@@ -90,9 +101,22 @@ export async function loadLibrary(me: Me): Promise<Library> {
       songs: mixSongs[i], // playlist order: the kid's own order
     })),
     playlists,
+    grownup,
     boxes: playlists
       .filter((p) => p.owner.id === me.id && BOX_RE.test(p.name))
       .map((p) => ({ id: p.id, kidName: p.name.match(BOX_RE)![1] })),
+  }
+}
+
+/** The connected grown-up's own playlists (only ones Spotify lets us read: theirs or collaborative). */
+async function loadGrownup(): Promise<Library['grownup']> {
+  if (!sp.isGrownupConnected()) return null
+  try {
+    const [me, all] = await Promise.all([sp.getMe('grownup'), sp.listMyPlaylists('grownup')])
+    return { me, playlists: all.filter((p) => p.owner.id === me.id || p.collaborative) }
+  } catch (e) {
+    if (e instanceof sp.AuthError) sp.disconnectGrownup()
+    return null
   }
 }
 

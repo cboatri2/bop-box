@@ -22,7 +22,14 @@ const SCOPES = [
   'user-library-modify', // needed to delete a kid's mix
 ].join(' ')
 
-const TOKEN_KEY = 'bopbox.token'
+// A grown-up can connect their own Spotify to a kid's device *read-only*, so their playlists
+// can become shelves. This token can only read playlists: it can't play, change or delete anything.
+const GROWNUP_SCOPES = 'playlist-read-private playlist-read-collaborative'
+
+/** 'main' = the account this device plays music with. 'grownup' = a read-only grown-up connection. */
+export type Acct = 'main' | 'grownup'
+
+const TOKEN_KEYS: Record<Acct, string> = { main: 'bopbox.token', grownup: 'bopbox.token.grownup' }
 const VERIFIER_KEY = 'bopbox.pkce'
 const API = 'https://api.spotify.com/v1'
 
@@ -30,28 +37,43 @@ type Token = { access: string; refresh: string; expires: number }
 
 // ── token storage ───────────────────────────────────────────────────────────
 
-function readToken(): Token | null {
+function readToken(acct: Acct = 'main'): Token | null {
   try {
-    const raw = localStorage.getItem(TOKEN_KEY)
+    const raw = localStorage.getItem(TOKEN_KEYS[acct])
     return raw ? (JSON.parse(raw) as Token) : null
   } catch {
     return null
   }
 }
 
-function writeToken(t: Token | null) {
+function writeToken(t: Token | null, acct: Acct = 'main') {
   try {
-    if (t) localStorage.setItem(TOKEN_KEY, JSON.stringify(t))
-    else localStorage.removeItem(TOKEN_KEY)
+    if (t) localStorage.setItem(TOKEN_KEYS[acct], JSON.stringify(t))
+    else localStorage.removeItem(TOKEN_KEYS[acct])
   } catch {
     /* storage unavailable */
   }
 }
 
-export const isLoggedIn = () => readToken() !== null
+export const isLoggedIn = () => readToken('main') !== null
+export const isGrownupConnected = () => (DEMO ? demoGrownup() : readToken('grownup') !== null)
 
 export function logout() {
-  writeToken(null)
+  writeToken(null, 'main')
+  writeToken(null, 'grownup')
+}
+
+export function disconnectGrownup() {
+  if (DEMO) localStorage.removeItem('bopbox.demo.grownup')
+  writeToken(null, 'grownup')
+}
+
+const demoGrownup = () => {
+  try {
+    return localStorage.getItem('bopbox.demo.grownup') === '1'
+  } catch {
+    return false
+  }
 }
 
 // ── PKCE login ──────────────────────────────────────────────────────────────
@@ -62,43 +84,57 @@ function base64url(bytes: Uint8Array) {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-export async function beginLogin() {
+export async function beginLogin(acct: Acct = 'main') {
+  if (DEMO && acct === 'grownup') {
+    localStorage.setItem('bopbox.demo.grownup', '1')
+    sessionStorage.setItem('bopbox.justConnected', '1')
+    window.location.reload()
+    return
+  }
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(48)))
   const challenge = base64url(
     new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))),
   )
   const state = base64url(crypto.getRandomValues(new Uint8Array(12)))
-  localStorage.setItem(VERIFIER_KEY, JSON.stringify({ verifier, state }))
+  localStorage.setItem(VERIFIER_KEY, JSON.stringify({ verifier, state, acct }))
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: CLIENT_ID,
-    scope: SCOPES,
+    scope: acct === 'grownup' ? GROWNUP_SCOPES : SCOPES,
     redirect_uri: REDIRECT_URI,
     code_challenge_method: 'S256',
     code_challenge: challenge,
     state,
+    // On a kid's device Spotify remembers the kid's login; this lets the grown-up switch accounts.
+    ...(acct === 'grownup' ? { show_dialog: 'true' } : {}),
   })
   window.location.assign(`https://accounts.spotify.com/authorize?${params}`)
 }
 
-/** If the URL carries ?code=… from Spotify, trade it for tokens. Returns an error message, or null. */
-export async function completeLoginFromUrl(): Promise<string | null> {
+/**
+ * If the URL carries ?code=… from Spotify, trade it for tokens.
+ * Returns an error message (or null) and which account just signed in.
+ */
+export async function completeLoginFromUrl(): Promise<{ error: string | null; acct: Acct | null }> {
   const url = new URL(window.location.href)
   const code = url.searchParams.get('code')
   const err = url.searchParams.get('error')
-  if (!code && !err) return null
+  if (!code && !err) return { error: null, acct: null }
 
   // Clean the address bar no matter what happens next.
   window.history.replaceState({}, '', REDIRECT_URI)
 
-  if (err) return err === 'access_denied' ? 'Spotify sign-in was cancelled.' : `Spotify said: ${err}`
   const saved = JSON.parse(localStorage.getItem(VERIFIER_KEY) ?? 'null') as {
     verifier: string
     state: string
+    acct?: Acct
   } | null
   localStorage.removeItem(VERIFIER_KEY)
+  const acct = saved?.acct ?? 'main'
+
+  if (err) return { error: err === 'access_denied' ? 'Spotify sign-in was cancelled.' : `Spotify said: ${err}`, acct }
   if (!saved || saved.state !== url.searchParams.get('state')) {
-    return 'That sign-in link expired. Please try again.'
+    return { error: 'That sign-in link expired. Please try again.', acct }
   }
 
   const res = await fetch('https://accounts.spotify.com/api/token', {
@@ -112,21 +148,17 @@ export async function completeLoginFromUrl(): Promise<string | null> {
       code_verifier: saved.verifier,
     }),
   })
-  if (!res.ok) return 'Spotify sign-in failed. Please try again.'
+  if (!res.ok) return { error: 'Spotify sign-in failed. Please try again.', acct }
   const j = await res.json()
-  writeToken({
-    access: j.access_token,
-    refresh: j.refresh_token,
-    expires: Date.now() + (j.expires_in - 60) * 1000,
-  })
-  return null
+  writeToken({ access: j.access_token, refresh: j.refresh_token, expires: Date.now() + (j.expires_in - 60) * 1000 }, acct)
+  return { error: null, acct }
 }
 
-let refreshing: Promise<string> | null = null
+const refreshing: Partial<Record<Acct, Promise<string>>> = {}
 
-async function refresh(): Promise<string> {
-  const t = readToken()
-  if (!t) throw new AuthError()
+async function refresh(acct: Acct): Promise<string> {
+  const t = readToken(acct)
+  if (!t) throw new AuthError(acct)
   const res = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -138,33 +170,34 @@ async function refresh(): Promise<string> {
   })
   if (!res.ok) {
     if (res.status === 400 || res.status === 401) {
-      writeToken(null)
-      throw new AuthError()
+      writeToken(null, acct)
+      throw new AuthError(acct)
     }
     throw new Error('Could not reach Spotify')
   }
   const j = await res.json()
-  writeToken({
-    access: j.access_token,
-    refresh: j.refresh_token ?? t.refresh,
-    expires: Date.now() + (j.expires_in - 60) * 1000,
-  })
+  writeToken(
+    { access: j.access_token, refresh: j.refresh_token ?? t.refresh, expires: Date.now() + (j.expires_in - 60) * 1000 },
+    acct,
+  )
   return j.access_token
 }
 
-export async function getAccessToken(force = false): Promise<string> {
-  const t = readToken()
-  if (!t) throw new AuthError()
+export async function getAccessToken(force = false, acct: Acct = 'main'): Promise<string> {
+  const t = readToken(acct)
+  if (!t) throw new AuthError(acct)
   if (!force && Date.now() < t.expires) return t.access
-  refreshing ??= refresh().finally(() => (refreshing = null))
-  return refreshing
+  refreshing[acct] ??= refresh(acct).finally(() => delete refreshing[acct])
+  return refreshing[acct]!
 }
 
 // ── fetch wrapper ───────────────────────────────────────────────────────────
 
 export class AuthError extends Error {
-  constructor() {
+  acct: Acct
+  constructor(acct: Acct = 'main') {
     super('Signed out of Spotify')
+    this.acct = acct
   }
 }
 
@@ -178,15 +211,18 @@ export class SpotifyError extends Error {
   }
 }
 
-async function api<T = unknown>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
+type Init = RequestInit & { acct?: Acct }
+
+async function api<T = unknown>(path: string, init: Init = {}, retried = false): Promise<T> {
   if (DEMO) return (init.method === 'POST' && path === '/me/playlists' ? { id: `demo-${Date.now()}` } : undefined) as T
-  const token = await getAccessToken(retried)
+  const { acct = 'main', ...req } = init
+  const token = await getAccessToken(retried, acct)
   const res = await fetch(path.startsWith('http') ? path : API + path, {
-    ...init,
+    ...req,
     headers: {
       Authorization: `Bearer ${token}`,
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
+      ...(req.body ? { 'Content-Type': 'application/json' } : {}),
+      ...req.headers,
     },
   })
   if (res.status === 401 && !retried) return api<T>(path, init, true)
@@ -244,7 +280,7 @@ export type PlaybackState = {
 
 // ── endpoints ───────────────────────────────────────────────────────────────
 
-export const getMe = () => api<Me>('/me')
+export const getMe = (acct: Acct = 'main') => api<Me>('/me', { acct })
 
 export const MARKER = '[bopbox]'
 export const MIX_MARKER = '[bopbox-mix'
@@ -262,11 +298,11 @@ export type PlaylistInfo = {
 type RawPlaylist = Omit<PlaylistInfo, 'total'> & { items?: { total: number }; tracks?: { total: number } }
 
 /** Every playlist in the signed-in account's library. */
-export async function listMyPlaylists(): Promise<PlaylistInfo[]> {
+export async function listMyPlaylists(acct: Acct = 'main'): Promise<PlaylistInfo[]> {
   const out: PlaylistInfo[] = []
   let next: string | null = '/me/playlists?limit=50'
   while (next) {
-    const page: { items: (RawPlaylist | null)[]; next: string | null } = await api(next)
+    const page: { items: (RawPlaylist | null)[]; next: string | null } = await api(next, { acct })
     for (const p of page.items) {
       if (!p) continue
       out.push({
@@ -328,11 +364,11 @@ export const deletePlaylist = (id: string) =>
 
 type PlaylistEntry = { added_at: string; item?: Track | null; track?: Track | null }
 
-export async function getPlaylistSongs(id: string): Promise<Song[]> {
+export async function getPlaylistSongs(id: string, acct: Acct = 'main'): Promise<Song[]> {
   const songs: Song[] = []
   let next: string | null = `/playlists/${id}/items?limit=50`
   while (next) {
-    const page: { items: PlaylistEntry[]; next: string | null } = await api(next)
+    const page: { items: PlaylistEntry[]; next: string | null } = await api(next, { acct })
     for (const e of page.items) {
       const t = e.item ?? e.track
       // Skip podcasts, local files and unplayable rows.

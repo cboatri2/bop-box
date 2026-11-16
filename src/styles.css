@@ -2558,3 +2558,51 @@ code {
   --accent-soft: color-mix(in srgb, var(--accent) 22%, #2c2450);
   --accent-ink: color-mix(in srgb, var(--accent) 60%, white);
 }
+
+/* Grown-up playlist sources */
+.list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 26px 4px 0;
+}
+.list-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 19px;
+}
+.link-btn.inline {
+  display: inline;
+  margin: 0;
+}
+.connect-card {
+  display: flex;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 20px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  border: 3px dashed color-mix(in srgb, var(--accent) 45%, var(--line-2));
+}
+.connect-card b {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 19px;
+}
+.connect-card p {
+  margin: 4px 0 14px;
+  color: var(--ink-2);
+  font-size: 15px;
+}
+.connect-icon {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}

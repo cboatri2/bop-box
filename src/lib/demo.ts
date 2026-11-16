@@ -1,5 +1,5 @@
 import type { Library } from './library'
-import type { PlaylistInfo, Song } from './spotify'
+import { isGrownupConnected, type PlaylistInfo, type Song } from './spotify'
 
 const PAL = [
   ['#FF8FB8', '#FF5C9A'], ['#8CC8FF', '#4A7DFF'], ['#7DE3C3', '#25B08A'], ['#FFD15C', '#FF9A3C'],
@@ -43,17 +43,22 @@ export function demoLibrary(approved: string[], firstKid = true): Library {
     pl('car', 'Car Songs 🚗', 6, 3), pl('disney', 'Movie Night', 5, 1), pl('bed', 'Bedtime', 4, 7),
     pl('mine', 'Dad’s Workout Mix', 40, 5), pl('other', 'Today’s Top Hits', 50, 2, 'spotify'),
   ]
+  const grownupLists = [pl('mom1', 'Kids Jams', 7, 8, 'mom'), pl('mom2', 'Road Trip 🚙', 5, 13, 'mom'), pl('mom3', 'Lullabies', 4, 7, 'mom')]
+  const grownup = isGrownupConnected() ? { me: { id: 'mom', display_name: 'Mom' }, playlists: grownupLists } : null
   const shelfSongs: Record<string, Song[]> = {
     car: demoSongs.slice(4, 10), disney: demoSongs.slice(9, 14), bed: demoSongs.slice(11, 16),
+    mom1: demoSongs.slice(0, 7), mom2: demoSongs.slice(6, 11), mom3: demoSongs.slice(12, 16),
   }
+  const all = [...playlists, ...(grownup?.playlists ?? [])]
   return {
     picked: { id: 'picked', name: 'Picked for you', images: [], songs: demoSongs.slice(0, 5) },
-    shelves: playlists.filter((p) => approved.includes(p.id)).map((p) => ({ id: p.id, name: p.name, images: p.images, songs: shelfSongs[p.id] ?? [] })),
+    shelves: all.filter((p) => approved.includes(p.id)).map((p) => ({ id: p.id, name: p.name, images: p.images, songs: shelfSongs[p.id] ?? [] })),
     mixes: !firstKid ? [] : [
       { id: 'mix1', name: 'Dance Party', emoji: '💃', color: 'grape', songs: [demoSongs[1], demoSongs[5], demoSongs[12], demoSongs[3]] },
       { id: 'mix2', name: 'Sleepy Songs', emoji: '🌙', color: 'ocean', songs: [demoSongs[7], demoSongs[14]] },
     ],
     playlists,
     boxes: [],
+    grownup,
   }
 }

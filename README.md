@@ -17,6 +17,13 @@ wishes). With more than one, Bop Box opens on *Who's listening?*. Each kid's "Pi
 device. Spotify plays one stream per account: kids listening at the same time need devices signed in to
 different Spotify accounts.
 
+## A grown-up's playlists on a kid's device
+
+In the grown-up corner → Playlists, *Connect a grown-up's Spotify* signs a second account in **read-only**
+(`playlist-read-private playlist-read-collaborative` only). Its playlists can then be switched on per kid as
+shelves, while music still plays through the device's own account. That grown-up account also has to be
+listed under the Spotify app's User Management.
+
 ## How it works
 
 | Piece | Where |
