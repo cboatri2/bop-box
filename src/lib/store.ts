@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { DEMO } from './demo-flag'
+import { SYNCED_KID_FIELDS, type SyncedKidField } from './syncDoc'
 
 // Tiny persisted store. Everything here lives only on this device;
 // nothing personal is ever written into the code or the repo.
@@ -24,6 +25,8 @@ export type Kid = {
   approvedPlaylists: string[] // grown-up playlists this kid may play
   favorites: string[] // track uris
   wishes: Wish[]
+  /** When each synced field last changed (0 = never; 1 = before sync existed). */
+  stamps?: Partial<Record<SyncedKidField, number>>
 }
 
 type Device = {
@@ -35,6 +38,7 @@ type Device = {
   activeKidId: string | null
   mixMeta: Record<string, { emoji: string; color: ThemeName; kid?: string }> // fallback if Spotify hides descriptions
   deletedMixes: string[] // playlist ids deleted here, so they never come back even if Spotify is slow to forget
+  pinAt?: number // when the PIN last changed, for syncing between devices
 }
 
 export type Settings = Device & Omit<Kid, 'id'> & { kidId: string | null }
@@ -138,10 +142,59 @@ export function updateSettings(patch: Partial<Settings> | ((s: Settings) => Part
       kids = [...kids, k]
       active = k.id
     }
-    kids = kids.map((k) => (k.id === active ? { ...k, ...kidPatch } : k))
+      const now = Date.now()
+    kids = kids.map((k) => {
+      if (k.id !== active) return k
+      const stamps = { ...stampsOf(k) }
+      for (const f of SYNCED_KID_FIELDS) if (f in kidPatch) stamps[f] = now
+      return { ...k, ...kidPatch, stamps }
+    })
     next = { ...next, kids, activeKidId: active }
   }
+  if ('pinHash' in devPatch) next.pinAt = Date.now()
   commit(next)
+}
+
+const DEFAULTS = newKid()
+const isDefault = (k: Kid, f: SyncedKidField) =>
+  Array.isArray(k[f]) ? (k[f] as unknown[]).length === 0 : k[f] === DEFAULTS[f] || (f === 'kidName' && !k.kidName)
+
+/** A kid's change times. Settings from before sync existed count as very old (1), defaults as never set (0). */
+export function stampsOf(k: Kid): Partial<Record<SyncedKidField, number>> {
+  if (k.stamps) return k.stamps
+  return Object.fromEntries(SYNCED_KID_FIELDS.map((f) => [f, isDefault(k, f) ? 0 : 1]))
+}
+
+/** The PIN's change time (very old if it was set before sync existed). */
+export const pinStamp = (d: Settings) => d.pinAt ?? (d.pinHash ? 1 : 0)
+
+/** Apply settings that came from another device, keeping their change times. */
+export function applyFromSync(
+  kidId: string,
+  fields: Partial<Kid>,
+  stamps: Partial<Record<SyncedKidField, number>>,
+  extra: { pin?: { v: string; at: number }; deletedMixes?: string[] } = {},
+) {
+  const kids = device.kids.map((k) =>
+    k.id === kidId ? { ...k, ...fields, stamps: { ...stampsOf(k), ...stamps } } : k,
+  )
+  const deletedMixes = extra.deletedMixes ? [...new Set([...device.deletedMixes, ...extra.deletedMixes])] : device.deletedMixes
+  commit({
+    ...device,
+    kids,
+    deletedMixes,
+    ...(extra.pin ? { pinHash: extra.pin.v, pinAt: extra.pin.at } : {}),
+  })
+}
+
+/** A brand-new device: bring in kids (and the PIN) set up on another device. */
+export function importKids(kids: Kid[], pin: { v: string; at: number }, deletedMixes: string[] = []) {
+  commit({ ...device, kids, activeKidId: kids[0]?.id ?? null, pinHash: pin.v, pinAt: pin.at, setupDone: true, deletedMixes })
+}
+
+export function subscribe(l: () => void) {
+  listeners.add(l)
+  return () => listeners.delete(l)
 }
 
 export function setActiveKid(id: string | null) {

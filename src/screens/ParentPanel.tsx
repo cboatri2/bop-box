@@ -29,6 +29,7 @@ import { hashPin, removeKid, setActiveKid, updateSettings, useSettings } from '.
 import { Mascot } from '../components/Mascot'
 import { toast } from '../lib/toast'
 import { seasonOn } from '../lib/season'
+import { lastSyncedAt, syncAvailable } from '../lib/sync'
 import { BuddyPicker } from './Setup'
 
 type Tab = 'playlists' | 'add' | 'list' | 'wishes' | 'settings'
@@ -792,6 +793,16 @@ function Troubleshooting() {
               </li>
             ))}
             <li>Grown-up playlists: <b>{isGrownupConnected() ? 'connected' : 'not connected'}</b></li>
+            <li>
+              Settings sync between devices:{' '}
+              <b>
+                {!syncAvailable()
+                  ? 'off on this copy'
+                  : lastSyncedAt()
+                    ? `last synced ${new Date(lastSyncedAt()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                    : 'not yet'}
+              </b>
+            </li>
           </ul>
           <p className="muted small">Recent events (newest first):</p>
           {entries.length ? (

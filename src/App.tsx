@@ -35,6 +35,7 @@ import { toast } from './lib/toast'
 import { DEMO } from './lib/demo-flag'
 import { logEvent } from './lib/log'
 import { useSeason } from './lib/season'
+import { importExistingSetup, startAutoSync, syncActiveKid } from './lib/sync'
 import { KidHome } from './screens/KidHome'
 import { NowPlaying, SpeakerSheet } from './screens/NowPlaying'
 import { ParentPanel } from './screens/ParentPanel'
@@ -189,6 +190,8 @@ function Main() {
       // Ignore a load for a kid we've switched away from, or one that started before a mix edit.
       if (getSettings().kidId === kidAtStart && edits.current === editsAtStart) setLib(next)
       retries.current = 0
+      // Pick up settings changed on another device (and send ours); reload if the approved list changed.
+      void syncActiveKid().then((changed) => onSynced.current(changed, kidAtStart))
     } catch (e) {
       if (e instanceof StaleLoad) return
       if (e instanceof AuthError && e.acct === 'main') {
@@ -234,6 +237,19 @@ function Main() {
       setLoading(false)
     }
   }, [])
+
+  // Settings that arrived from another device: reload if the approved list changed, re-apply the volume cap.
+  const onSynced = useRef((changed: Set<string>, kidAtStart: string | null) => {
+    if (getSettings().kidId !== kidAtStart) return
+    if (changed.has('maxVolume')) setMaxVolume(getSettings().maxVolume)
+    if (changed.has('approvedPlaylists') || changed.has('hideExplicit')) void loadRef.current()
+  })
+  const loadRef = useRef(load)
+  loadRef.current = load
+  useEffect(() => {
+    if (!s.setupDone) return
+    return startAutoSync((changed) => onSynced.current(changed, getSettings().kidId))
+  }, [s.setupDone])
 
   // Switching kids: pause, apply that kid's volume cap, and load their library.
   useEffect(() => {
@@ -358,7 +374,7 @@ function Main() {
     [],
   )
 
-  if (!s.setupDone) return <Setup onDone={() => setView('parent')} />
+  if (!s.setupDone) return <FirstRun onDone={() => setView('parent')} />
 
   if (view === 'add-kid') {
     const onDevice = new Set(s.kids.map((k) => k.playlistId).filter(Boolean))
@@ -568,4 +584,38 @@ function ForgotPin() {
       Forgot PIN?
     </button>
   )
+}
+
+/**
+ * A device that hasn't been set up yet. If the signed-in Spotify account already has kids set up
+ * (on another phone or iPad), bring them in instead of starting over.
+ */
+function FirstRun({ onDone }: { onDone: () => void }) {
+  const [checking, setChecking] = useState(true)
+  useEffect(() => {
+    let live = true
+    void importExistingSetup().then((n) => {
+      if (!live) return
+      if (n > 0) {
+        const names = getSettings().kids.map((k) => k.kidName)
+        toast(`Welcome back! Brought in ${names.join(' and ')} from your other device.`, '🎉')
+      }
+      setChecking(false)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+  if (checking) {
+    return (
+      <main className="center-screen">
+        <div className="card setup-card">
+          <Mascot size={120} mood="wow" />
+          <h1 className="h1">Getting things ready…</h1>
+          <p className="muted">Checking for kids you've already set up on another device.</p>
+        </div>
+      </main>
+    )
+  }
+  return <Setup onDone={onDone} />
 }
