@@ -16,6 +16,8 @@ type Props = {
 }
 
 const INK = '#3A2648'
+const PAD = 16
+const PAD_TOP = 26
 
 /** "Bop", the little music buddy. Colors follow the active theme. */
 export function Mascot({ size = 96, mood = 'happy', accessory = 'headphones', bop, notes, className = '', seasonal = true }: Props) {
@@ -36,7 +38,14 @@ export function Mascot({ size = 96, mood = 'happy', accessory = 'headphones', bo
           <i>♪</i>
         </span>
       )}
-      <svg viewBox="0 0 120 120" width={size} height={size} overflow="visible">
+      {/* The drawing gets room around it (hats, ears, z's) so nothing is clipped on iPhone, where
+          overflow outside an <svg> isn't reliably painted. Bop himself stays the same size and place. */}
+      <svg
+        viewBox={`${-PAD} ${-PAD_TOP} ${120 + 2 * PAD} ${120 + PAD_TOP + PAD}`}
+        width={(size * (120 + 2 * PAD)) / 120}
+        height={(size * (120 + PAD_TOP + PAD)) / 120}
+        style={{ position: 'absolute', left: (-size * PAD) / 120, top: (-size * PAD_TOP) / 120 }}
+      >
         <ellipse className="mascot-shadow" cx="60" cy="113" rx="30" ry="5" fill={INK} fillOpacity=".13" />
         <g className="mascot-body">
           {accessory === 'ears' && (
