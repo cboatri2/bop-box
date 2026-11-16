@@ -2637,3 +2637,28 @@ code {
     width: 100%;
   }
 }
+
+/* Troubleshooting */
+.diag {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 15px;
+}
+.diag-log {
+  margin: 0 0 8px;
+  padding: 12px 14px 12px 32px;
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  max-height: 300px;
+  overflow-y: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.diag-log li {
+  margin-bottom: 4px;
+}
+.diag-log span {
+  color: var(--ink-2);
+}

@@ -6,6 +6,7 @@
 
 import { DEMO } from './demo-flag'
 import { getSettings } from './store'
+import { logEvent } from './log'
 
 export const CLIENT_ID: string = import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? ''
 export const REDIRECT_URI = window.location.origin + import.meta.env.BASE_URL
@@ -53,6 +54,21 @@ function keyFor(acct: Acct) {
 
 /** True when this kid signs in with their own Spotify account (not the device's shared one). */
 export const kidHasOwnAccount = (kidId: string | null) => !!kidId && has(KID_PREFIX + kidId)
+
+/** Human label for a token key, for the troubleshooting log. */
+function label(key: string) {
+  if (key === DEVICE_KEY) return 'shared device account'
+  if (key === GROWNUP_KEY) return 'grown-up read-only account'
+  const id = key.slice(KID_PREFIX.length)
+  return `${getSettings().kids.find((k) => k.id === id)?.kidName ?? 'a kid'}'s account`
+}
+
+export const deviceSignedIn = () => has(DEVICE_KEY)
+
+/** Sign out only the device's shared account (kids' own accounts stay signed in). */
+export function forgetDeviceAccount() {
+  writeToken(null, DEVICE_KEY)
+}
 
 export function forgetKidAccount(kidId: string) {
   try {
@@ -194,18 +210,25 @@ export async function completeLoginFromUrl(): Promise<{ error: string | null; ac
       code_verifier: saved.verifier,
     }),
   })
-  if (!res.ok) return { error: 'Spotify sign-in failed. Please try again.', acct }
-  const j = await res.json()
   const key = acct === 'grownup' ? GROWNUP_KEY : kidId ? KID_PREFIX + kidId : DEVICE_KEY
+  if (!res.ok) {
+    logEvent(`Sign-in failed for ${label(key)} (Spotify said ${res.status})`)
+    return { error: 'Spotify sign-in failed. Please try again.', acct }
+  }
+  const j = await res.json()
   writeToken({ access: j.access_token, refresh: j.refresh_token, expires: Date.now() + (j.expires_in - 60) * 1000 }, key)
+  logEvent(`Signed in: ${label(key)}`)
   return { error: null, acct, kidId }
 }
 
 const refreshing: Record<string, Promise<string> | undefined> = {}
 
-async function refresh(acct: Acct, key: string): Promise<string> {
+async function refresh(acct: Acct, key: string, retried = false): Promise<string> {
   const t = readToken(acct, key)
-  if (!t) throw new AuthError(acct)
+  if (!t) {
+    logEvent(`No saved sign-in for ${label(key)}`)
+    throw new AuthError(acct)
+  }
   const res = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -217,6 +240,16 @@ async function refresh(acct: Acct, key: string): Promise<string> {
   })
   if (!res.ok) {
     if (res.status === 400 || res.status === 401) {
+      // Another copy of Bop Box (a second tab, or the home-screen app) may have renewed this
+      // sign-in a moment ago, which retires the old renewal code. Use its newer one instead.
+      const latest = readToken(acct, key)
+      if (latest && latest.refresh !== t.refresh) {
+        logEvent(`Renewal raced another copy of Bop Box; using its newer sign-in (${label(key)})`)
+        if (Date.now() < latest.expires) return latest.access
+        if (!retried) return refresh(acct, key, true)
+      }
+      const why = await res.json().then((j) => j.error_description || j.error, () => '')
+      logEvent(`Renewal failed for ${label(key)} (Spotify said ${res.status}${why ? `: ${why}` : ''})`)
       writeToken(null, key)
       throw new AuthError(acct)
     }
@@ -415,8 +448,16 @@ export const deletePlaylist = (id: string) =>
  * Spotify keeps it around), then remove it from the account's library.
  */
 export async function retireMix(id: string) {
-  await updatePlaylistDetails(id, { name: 'Deleted Bop Box mix', description: 'Deleted in Bop Box.' }).catch(() => {})
-  await deletePlaylist(id)
+  await updatePlaylistDetails(id, { name: 'Deleted Bop Box mix', description: 'Deleted in Bop Box.' }).catch((e) =>
+    logEvent(`Couldn't relabel a deleted mix (Spotify said ${e instanceof SpotifyError ? e.status : '?'})`),
+  )
+  try {
+    await deletePlaylist(id)
+    logEvent('Deleted a mix in Spotify')
+  } catch (e) {
+    logEvent(`Spotify refused to delete a mix (${e instanceof SpotifyError ? `${e.status}: ${e.message}` : 'no response'})`)
+    throw e
+  }
 }
 
 type PlaylistEntry = { added_at: string; item?: Track | null; track?: Track | null }

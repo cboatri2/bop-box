@@ -1,8 +1,8 @@
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Mascot } from './components/Mascot'
 import { PinPad } from './components/PinPad'
-import { Backdrop, Icon, Sheet, Toasts } from './components/ui'
+import { Backdrop, Icon, SafeLayer, Sheet, Toasts } from './components/ui'
 import { allowedSongs, keepAllowed, loadLibrary, type Library, type Mix } from './lib/library'
 import { getPlayer, initPlayer, restartPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
 import {
@@ -12,6 +12,7 @@ import {
   completeLoginFromUrl,
   createPlaylist,
   retireMix,
+  forgetDeviceAccount,
   getMe,
   isLoggedIn,
   logout,
@@ -29,6 +30,7 @@ import {
 import { getSettings, hashPin, isNightTime, removeKid, setActiveKid, updateSettings, useSettings, type ThemeName } from './lib/store'
 import { toast } from './lib/toast'
 import { DEMO } from './lib/demo-flag'
+import { logEvent } from './lib/log'
 import { KidHome } from './screens/KidHome'
 import { NowPlaying, SpeakerSheet } from './screens/NowPlaying'
 import { ParentPanel } from './screens/ParentPanel'
@@ -60,7 +62,11 @@ export default function App() {
         }
       })
       .catch(() => toast('Spotify sign-in failed. Please try again.', '😕'))
-      .finally(() => setBoot(isLoggedIn() ? 'in' : 'out'))
+      .finally(() => {
+        const inNow = isLoggedIn()
+        if (!inNow) logEvent('Opened Bop Box: no Spotify sign-in saved on this device')
+        setBoot(inNow ? 'in' : 'out')
+      })
   }, [])
 
   return (
@@ -173,13 +179,17 @@ function Main() {
       if (e instanceof AuthError && e.acct === 'main') {
         // A kid with their own account needs that account signed in again; never fall back to another.
         if (getSettings().ownAccount) {
+          logEvent(`${getSettings().kidName}'s own account needs signing in again`)
           setNeedsLogin(true)
           return
         }
-        logout()
+        // Only the shared device account needs signing in again; kids' own accounts stay signed in.
+        logEvent(`Shared account signed out after a failed sign-in (while loading ${getSettings().kidName || 'a kid'})`)
+        forgetDeviceAccount()
         window.location.reload()
         return
       }
+      if (e instanceof SpotifyError) logEvent(`Loading songs failed (Spotify said ${e.status}: ${e.message})`)
       toast("Couldn't load songs. Check the internet?", '📡')
     } finally {
       busy.current = false
@@ -455,7 +465,7 @@ function Main() {
 
       <AnimatePresence>
         {p.sleepy && (
-          <motion.div className="goodnight" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 1.2 }}>
+          <SafeLayer key="goodnight" className="goodnight" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 1.2 }}>
             <div className="moon" />
             <Mascot size={160} mood="sleepy" accessory={s.accessory} />
             <h1 className="h1">Sweet dreams, {s.kidName}!</h1>
@@ -463,7 +473,7 @@ function Main() {
             <button className="btn-soft" onClick={wakeUp}>
               <Icon name="star" /> I'm awake
             </button>
-          </motion.div>
+          </SafeLayer>
         )}
       </AnimatePresence>
     </>

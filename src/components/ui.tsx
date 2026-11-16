@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, motion, useIsPresent, type HTMLMotionProps } from 'motion/react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useToasts } from '../lib/toast'
 
@@ -172,48 +172,66 @@ export function Backdrop() {
 
 // ── Bottom sheet ────────────────────────────────────────────────────────────
 
-export function Sheet({
-  open,
-  onClose,
-  title,
-  children,
-  className = '',
-}: {
+type SheetProps = {
   open: boolean
   onClose: () => void
   title: string
   children: ReactNode
   className?: string
-}) {
+}
+
+export function Sheet(props: SheetProps) {
+  const { open, onClose } = props
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
+  return <AnimatePresence>{open && <SheetPanel key="sheet" {...props} />}</AnimatePresence>
+}
+
+function SheetPanel({ onClose, title, children, className = '' }: SheetProps) {
+  // While closing, never block taps, even if the closing animation stalls (iPhone Low Power Mode).
+  const isPresent = useIsPresent()
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div className="sheet-wrap" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
-          <motion.div
-            className={`sheet ${className}`}
-            role="dialog"
-            aria-modal="true"
-            aria-label={title}
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 420, damping: 38 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="sheet-grip" />
-            <h2 className="sheet-title">{title}</h2>
-            {children}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <motion.div
+      className="sheet-wrap"
+      style={{ pointerEvents: isPresent ? 'auto' : 'none' }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.15 } }}
+      onClick={onClose}
+    >
+      <motion.div
+        className={`sheet ${className}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%', transition: { duration: 0.18, ease: 'easeIn' } }}
+        transition={{ type: 'spring', stiffness: 420, damping: 38 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="sheet-grip" />
+        <h2 className="sheet-title">{title}</h2>
+        {children}
+      </motion.div>
+    </motion.div>
   )
+}
+
+/** A full-screen motion layer for AnimatePresence that stops catching taps as soon as it starts closing. */
+export function SafeLayer(props: HTMLMotionProps<'div'>) {
+  const isPresent = useIsPresent()
+  return <motion.div {...props} style={{ ...props.style, pointerEvents: isPresent ? 'auto' : 'none' }} />
+}
+
+/** Style for full-screen layers inside AnimatePresence: stop catching taps the moment they start closing. */
+export function useExitSafe() {
+  const isPresent = useIsPresent()
+  return { pointerEvents: isPresent ? ('auto' as const) : ('none' as const) }
 }
 
 export function buzz(ms = 8) {

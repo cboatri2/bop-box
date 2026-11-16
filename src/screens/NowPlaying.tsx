@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useDragControls } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { Mascot } from '../components/Mascot'
-import { buzz, Icon, Sheet, useTick } from '../components/ui'
+import { buzz, Icon, SafeLayer, Sheet, useTick } from '../components/ui'
 import { dominantColor } from '../lib/color'
 import {
   chooseDevice,
@@ -52,7 +52,8 @@ export function NowPlaying({ open, onClose, mixes, mixOps }: { open: boolean; on
   return (
     <AnimatePresence>
       {open && p.track && (
-        <motion.div
+        <SafeLayer
+          key="np"
           className="np"
           style={{ ['--np' as string]: color ?? 'var(--accent)' }}
           initial={{ y: '100%' }}
@@ -200,7 +201,7 @@ export function NowPlaying({ open, onClose, mixes, mixOps }: { open: boolean; on
             song={{ ...p.track, explicit: false, addedAt: new Date().toISOString() }}
             mixOps={mixOps}
           />
-        </motion.div>
+        </SafeLayer>
       )}
     </AnimatePresence>
   )

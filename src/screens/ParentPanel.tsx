@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PinPad } from '../components/PinPad'
-import { Icon, Sheet } from '../components/ui'
+import { Icon, Sheet, useExitSafe } from '../components/ui'
 import { setMaxVolume } from '../lib/player'
 import {
   art,
@@ -9,6 +9,8 @@ import {
   beginLogin,
   disconnectGrownup,
   kidHasOwnAccount,
+  deviceSignedIn,
+  isGrownupConnected,
   getAlbumTracks,
   getPlaylistSongs,
   getTrack,
@@ -21,6 +23,7 @@ import {
   type Track,
 } from '../lib/spotify'
 import { isBopBoxPlaylist, type Library } from '../lib/library'
+import { clearLog, readLog } from '../lib/log'
 import { hashPin, removeKid, setActiveKid, updateSettings, useSettings } from '../lib/store'
 import { Mascot } from '../components/Mascot'
 import { toast } from '../lib/toast'
@@ -48,6 +51,7 @@ export function ParentPanel({ me, songs, playlists, grownup, pickedId, onApprove
   const [tab, setTab] = useState<Tab>(initialTab)
   const [query, setQuery] = useState('')
   const name = s.kidName || 'Kiddo'
+  const exitSafe = useExitSafe()
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: 'playlists', label: 'Playlists', count: s.approvedPlaylists.length },
@@ -59,6 +63,7 @@ export function ParentPanel({ me, songs, playlists, grownup, pickedId, onApprove
 
   return (
     <motion.div
+      style={exitSafe}
       className="parent"
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
@@ -715,6 +720,8 @@ function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: stri
         </button>
       </div>
 
+      <Troubleshooting />
+
       <Sheet open={pinOpen} onClose={() => setPinOpen(false)} title="New PIN">
         <PinPad
           key={first ? 'b' : 'a'}
@@ -736,6 +743,52 @@ function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: stri
         />
       </Sheet>
     </section>
+  )
+}
+
+function Troubleshooting() {
+  const s = useSettings()
+  const [open, setOpen] = useState(false)
+  const [, bump] = useState(0)
+  const entries = readLog().slice().reverse()
+  const fmt = (t: number) =>
+    new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return (
+    <div className="set-card">
+      <h3>Troubleshooting</h3>
+      {!open ? (
+        <button className="btn-soft" onClick={() => setOpen(true)}>
+          Show sign-in details
+        </button>
+      ) : (
+        <>
+          <ul className="diag">
+            <li>Shared device account: <b>{deviceSignedIn() ? 'signed in' : 'not signed in'}</b></li>
+            {s.kids.map((k) => (
+              <li key={k.id}>
+                {k.kidName}: <b>{k.ownAccount || kidHasOwnAccount(k.id) ? (kidHasOwnAccount(k.id) ? 'own account, signed in' : 'own account, NOT signed in') : 'uses shared account'}</b>
+              </li>
+            ))}
+            <li>Grown-up playlists: <b>{isGrownupConnected() ? 'connected' : 'not connected'}</b></li>
+          </ul>
+          <p className="muted small">Recent events (newest first):</p>
+          {entries.length ? (
+            <ol className="diag-log">
+              {entries.slice(0, 20).map((e, i) => (
+                <li key={i}>
+                  <span>{fmt(e.at)}</span> {e.what}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="muted small">Nothing yet.</p>
+          )}
+          <button className="btn-ghost" onClick={() => { clearLog(); bump((n) => n + 1) }}>
+            Clear log
+          </button>
+        </>
+      )}
+    </div>
   )
 }
 
