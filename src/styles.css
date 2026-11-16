@@ -2663,3 +2663,115 @@ code {
 .diag-log span {
   color: var(--ink-2);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Holidays + seasons (data-season on <html>; see lib/season.ts)
+   ───────────────────────────────────────────────────────────────────────── */
+
+.season-bits {
+  position: absolute;
+  inset: 0;
+}
+.season-bits i {
+  position: absolute;
+  top: -40px;
+  font-style: normal;
+  font-size: var(--size);
+  line-height: 1;
+  opacity: 0.85;
+  animation: bit-fall var(--dur) linear infinite;
+  animation-delay: var(--delay);
+  will-change: transform;
+}
+.season-bits.is-rising i {
+  top: auto;
+  bottom: -40px;
+  animation-name: bit-rise;
+}
+.season-bits i.snow,
+.season-bits i.bubbles {
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+}
+.season-bits i.snow {
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(140 170 215 / 0.35), 0 1px 5px rgb(110 140 200 / 0.35);
+}
+[data-night='true'] .season-bits i.snow {
+  box-shadow: 0 0 6px rgb(255 255 255 / 0.7);
+}
+.season-bits i.bubbles {
+  --size: 14px;
+  background: radial-gradient(circle at 32% 30%, rgb(255 255 255 / 0.9) 0 18%, rgb(140 205 255 / 0.25) 40%, rgb(140 205 255 / 0.1) 70%);
+  border: 1.5px solid rgb(120 190 245 / 0.55);
+}
+.season-bits i.emoji {
+  opacity: 0.55;
+}
+[data-night='true'] .season-bits i.emoji {
+  opacity: 0.4;
+}
+@keyframes bit-fall {
+  from { transform: translate3d(0, 0, 0) rotate(0deg); }
+  to { transform: translate3d(var(--sway), calc(100vh + 80px), 0) rotate(var(--spin)); }
+}
+@keyframes bit-rise {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(var(--sway), calc(-100vh - 80px), 0); }
+}
+
+.garland {
+  position: absolute;
+  top: var(--safe-t);
+  left: 0;
+  right: 0;
+  height: 40px;
+}
+.garland i {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat-x;
+  background-position: -6px 0;
+}
+.garland .glow {
+  animation: twinkle-lights 1.8s ease-in-out infinite alternate;
+}
+.garland .glow.b {
+  animation-delay: -0.9s;
+}
+@keyframes twinkle-lights {
+  from { opacity: 0.15; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .season-bits { display: none; }
+}
+
+/* Season colors for the soft background glows (they replace the kid's theme glows; the accent stays theirs). */
+[data-season='christmas'] { --bg: #f5f8ff; --b1: #ffd2d8; --b2: #cdeed8; --b3: #fff0c2; --b4: #d8e6ff; }
+[data-season='newyear'] { --b1: #fff0b8; --b2: #e3d9ff; --b3: #ffd6ea; --b4: #d6ecff; }
+[data-season='winter'] { --bg: #f4f8ff; --b1: #dcecff; --b2: #e6f4ff; --b3: #e3e0ff; --b4: #d4f2f5; }
+[data-season='valentines'] { --b1: #ffd1e0; --b2: #ffe0ea; --b3: #ffc7d6; --b4: #f0dcff; }
+[data-season='stpatricks'] { --b1: #cdf2d6; --b2: #e6f7c8; --b3: #fff1b8; --b4: #c9efe0; }
+[data-season='easter'] { --b1: #ffe0ef; --b2: #e5f6c9; --b3: #fff3b8; --b4: #dcd8ff; }
+[data-season='spring'] { --b1: #ffd9ea; --b2: #d9f5d0; --b3: #fff2b8; --b4: #e2dcff; }
+[data-season='july4'] { --b1: #ffd2d6; --b2: #d6e6ff; --b3: #fff0d0; --b4: #c9dcff; }
+[data-season='summer'] { --b1: #ffe9a6; --b2: #c9f2f0; --b3: #ffd9c2; --b4: #cfe7ff; }
+[data-season='fall'] { --bg: #fff3e6; --b1: #ffd9b3; --b2: #ffe6a6; --b3: #f5c9a8; --b4: #ecd8c4; }
+[data-season='halloween'] { --b1: #ffd2a8; --b2: #e3d9ff; --b3: #d9f2c4; --b4: #ffc59e; }
+[data-season='thanksgiving'] { --bg: #fff3e6; --b1: #ffd2a8; --b2: #ffe6a6; --b3: #f5c9a8; --b4: #f0d9c0; }
+
+[data-night='true'][data-season='christmas'] { --bg: #1b1934; --b1: #4a1f36; --b2: #173d33; --b3: #3b3320; --b4: #1f2d5c; }
+[data-night='true'][data-season='newyear'] { --b1: #4b3b1a; --b2: #2b2a64; --b3: #47224e; --b4: #1f2d5c; }
+[data-night='true'][data-season='winter'] { --b1: #1e3358; --b2: #26305e; --b3: #2c2a5e; --b4: #173a4a; }
+[data-night='true'][data-season='valentines'] { --b1: #5a1f3e; --b2: #4a1d4a; --b3: #5a2236; --b4: #3a2258; }
+[data-night='true'][data-season='stpatricks'] { --b1: #173f2a; --b2: #2a3f18; --b3: #3d3a17; --b4: #13403a; }
+[data-night='true'][data-season='easter'] { --b1: #4a2b55; --b2: #2b4a3a; --b3: #4a4220; --b4: #2d2a66; }
+[data-night='true'][data-season='spring'] { --b1: #4a2b55; --b2: #24452f; --b3: #4a4220; --b4: #2d2a66; }
+[data-night='true'][data-season='july4'] { --b1: #4a1f2e; --b2: #1d2c5e; --b3: #3a2a2a; --b4: #1a2450; }
+[data-night='true'][data-season='summer'] { --b1: #2a3f5e; --b2: #1d4a4a; --b3: #4a3320; --b4: #22305f; }
+[data-night='true'][data-season='fall'],
+[data-night='true'][data-season='thanksgiving'] { --bg: #1f1830; --b1: #4a2a18; --b2: #3e3416; --b3: #4a2220; --b4: #2e2a40; }
+[data-night='true'][data-season='halloween'] { --b1: #4a2a10; --b2: #2f1f52; --b3: #1d3a24; --b4: #3a1f3a; }

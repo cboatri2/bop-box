@@ -8,13 +8,16 @@ import type { Mix, Shelf } from '../lib/library'
 import { art, artistNames, type Song } from '../lib/spotify'
 import { toggleFavorite, updateSettings, useSettings } from '../lib/store'
 import { toast } from '../lib/toast'
+import { useSeason, type Season } from '../lib/season'
 import { AddSongsSheet, MixSheet, ReorderList, themeColor } from './Mixes'
 
 const TILTS = [-2.4, 1.8, -1.2, 2.6, -2, 1.2, -2.8, 2.2]
 const NEW_MS = 4 * 24 * 3600 * 1000
 
-function greeting() {
-  const h = new Date().getHours()
+function greeting(season: Season | null) {
+  const now = new Date()
+  if (season?.dayHello && season.isDay?.(now)) return season.dayHello
+  const h = now.getHours()
   if (h < 5 || h >= 20) return 'Cozy night'
   if (h < 12) return 'Good morning'
   if (h < 17) return 'Good afternoon'
@@ -37,6 +40,7 @@ type Props = {
 export function KidHome({ songs, shelves, mixes, mixOps, loading, onOpenPlayer, onGrownUps, onSwitchKid }: Props) {
   const s = useSettings()
   const p = usePlayer()
+  const season = useSeason()
   const [sel, setSel] = useState<Sel>({ kind: 'all' })
   const [burst, setBurst] = useState(0)
   const [wishOpen, setWishOpen] = useState(false)
@@ -92,9 +96,9 @@ export function KidHome({ songs, shelves, mixes, mixOps, loading, onOpenPlayer, 
         <Mascot size={84} accessory={s.accessory} bop={isPlaying} notes={isPlaying} mood={isPlaying ? 'singing' : 'happy'} />
         <div className="kid-hello">
           <h1 className="hello">
-            {greeting()}, <span className="hello-name">{s.kidName}!</span>
+            {greeting(season)}, <span className="hello-name">{s.kidName}!</span>
           </h1>
-          <p className="hello-sub">What do you want to listen to?</p>
+          <p className="hello-sub">{season?.sub ?? 'What do you want to listen to?'}</p>
         </div>
         <div className="corner-btns">
           {onSwitchKid && (

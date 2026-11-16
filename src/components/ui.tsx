@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useIsPresent, type HTMLMotionProps } from 'motion/react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useSeason } from '../lib/season'
 import { useToasts } from '../lib/toast'
 
 // ── Icons (rounded, chunky, hand-tuned for small hands) ─────────────────────
@@ -166,7 +167,68 @@ export function Backdrop() {
           <i key={i} style={{ left: `${(i * 37) % 100}%`, top: `${(i * 53) % 100}%`, animationDelay: `${(i % 7) * 0.6}s` }} />
         ))}
       </span>
+      <SeasonBits />
     </div>
+  )
+}
+
+/** Gently falling snow, leaves, hearts… (or rising bubbles in summer). Few, transform-only, so phones stay smooth. */
+function SeasonBits() {
+  const season = useSeason()
+  if (!season) return null
+  const n = 13
+  return (
+    <>
+      {season.id === 'christmas' && <Garland />}
+      <span className={`season-bits ${season.rise ? 'is-rising' : ''}`} key={season.id}>
+        {Array.from({ length: n }, (_, i) => {
+          const bit = season.bits[i % season.bits.length]
+          const dot = bit === 'snow' || bit === 'bubbles'
+          const r = (k: number) => ((i * k) % 97) / 97 // repeatable "random" 0–1
+          const style = {
+            left: `${(i / n) * 100 + r(31) * 6}%`,
+            '--size': dot ? `${5 + r(53) * 7}px` : `${15 + r(53) * 9}px`,
+            '--dur': `${11 + r(71) * 9}s`,
+            '--delay': `${-r(89) * 20}s`,
+            '--sway': `${(r(43) - 0.5) * 16}vw`,
+            '--spin': `${(r(29) - 0.5) * 540}deg`,
+          } as CSSProperties
+          return (
+            <i key={i} className={dot ? bit : 'emoji'} style={style}>
+              {dot ? null : bit}
+            </i>
+          )
+        })}
+      </span>
+    </>
+  )
+}
+
+/** A string of twinkly Christmas lights along the top. */
+function Garland() {
+  const colors = ['#FF4D5E', '#FFC93C', '#3DD68C', '#5AB0FF']
+  const tile = (glow: 0 | 1 | 2) => {
+    const bulbs = [12, 36, 60, 84]
+      .map((x, i) => {
+        if (glow && i % 2 !== glow - 1) return ''
+        const y = 19 // the wire dips to y ≈ 13.5 where each bulb hangs
+        const c = colors[i]
+        return glow
+          ? `<circle cx='${x}' cy='${y + 4}' r='11' fill='url(%23g${i})'/>`
+          : `<rect x='${x - 2.5}' y='${y - 6}' width='5' height='4' rx='1' fill='%23394a3e'/><ellipse cx='${x}' cy='${y + 3}' rx='4.5' ry='6.5' fill='${c.replace('#', '%23')}'/><ellipse cx='${x - 1.4}' cy='${y + 1}' rx='1.3' ry='2.2' fill='white' fill-opacity='.7'/>`
+      })
+      .join('')
+    const defs = glow
+      ? `<defs>${colors.map((c, i) => `<radialGradient id='g${i}'><stop offset='0' stop-color='${c.replace('#', '%23')}' stop-opacity='.75'/><stop offset='1' stop-color='${c.replace('#', '%23')}' stop-opacity='0'/></radialGradient>`).join('')}</defs>`
+      : `<path d='M0 6 Q24 26 48 6 Q72 26 96 6' stroke='%23394a3e' stroke-width='1.6' fill='none'/>`
+    return `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='96' height='40'>${defs}${bulbs}</svg>")`
+  }
+  return (
+    <span className="garland">
+      <i style={{ backgroundImage: tile(1) }} className="glow a" />
+      <i style={{ backgroundImage: tile(2) }} className="glow b" />
+      <i style={{ backgroundImage: tile(0) }} />
+    </span>
   )
 }
 

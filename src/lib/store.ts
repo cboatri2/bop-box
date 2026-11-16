@@ -29,6 +29,7 @@ export type Kid = {
 type Device = {
   pinHash: string
   nightColors: boolean // cozy dark colors in the evening
+  seasonal: boolean // holiday and season decorations
   setupDone: boolean
   kids: Kid[]
   activeKidId: string | null
@@ -59,6 +60,7 @@ export const newKid = (): Kid => ({
 const deviceDefaults: Device = {
   pinHash: '',
   nightColors: true,
+  seasonal: true,
   setupDone: false,
   kids: [],
   activeKidId: null,

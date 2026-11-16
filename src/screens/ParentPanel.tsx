@@ -28,6 +28,7 @@ import { clearLog, logEvent, readLog } from '../lib/log'
 import { hashPin, removeKid, setActiveKid, updateSettings, useSettings } from '../lib/store'
 import { Mascot } from '../components/Mascot'
 import { toast } from '../lib/toast'
+import { seasonOn } from '../lib/season'
 import { BuddyPicker } from './Setup'
 
 type Tab = 'playlists' | 'add' | 'list' | 'wishes' | 'settings'
@@ -95,7 +96,7 @@ export function ParentPanel({ me, songs, playlists, grownup, pickedId, onApprove
             className={`kid-chip ${k.id === s.kidId ? 'is-on' : ''}`}
             onClick={() => setActiveKid(k.id)}
           >
-            <Mascot size={34} accessory={k.accessory} />
+            <Mascot size={34} accessory={k.accessory} seasonal={false} />
             {k.kidName}
           </button>
         ))}
@@ -711,6 +712,12 @@ function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: stri
           hint="Softer, darker colors from 7:30 pm to 6:30 am."
           on={s.nightColors}
           onChange={(v) => updateSettings({ nightColors: v })}
+        />
+        <Toggle
+          label="Holiday themes"
+          hint={`Snow at Christmas, pumpkins at Halloween, hearts on Valentine's Day, and a hat for Bop. Right now: ${seasonOn(new Date()).label}.`}
+          on={s.seasonal !== false}
+          onChange={(v) => updateSettings({ seasonal: v })}
         />
       </div>
 

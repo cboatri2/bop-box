@@ -34,6 +34,7 @@ import { getSettings, hashPin, isNightTime, removeKid, setActiveKid, updateSetti
 import { toast } from './lib/toast'
 import { DEMO } from './lib/demo-flag'
 import { logEvent } from './lib/log'
+import { useSeason } from './lib/season'
 import { KidHome } from './screens/KidHome'
 import { NowPlaying, SpeakerSheet } from './screens/NowPlaying'
 import { ParentPanel } from './screens/ParentPanel'
@@ -85,6 +86,7 @@ export default function App() {
 function useTheme() {
   const s = useSettings()
   const p = usePlayer()
+  const season = useSeason()
   const [night, setNight] = useState(isNightTime())
   useEffect(() => {
     const t = setInterval(() => setNight(isNightTime()), 60000)
@@ -95,9 +97,11 @@ function useTheme() {
     const root = document.documentElement
     root.dataset.theme = s.theme
     root.dataset.night = String(isNight)
+    if (season) root.dataset.season = season.id
+    else delete root.dataset.season
     const bg = getComputedStyle(root).getPropertyValue('--bg').trim()
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg || '#FFF6EA')
-  }, [s.theme, isNight])
+  }, [s.theme, isNight, season])
 }
 
 export type MixOps = {

@@ -50,7 +50,7 @@ export function BuddyPicker() {
             className={`accessory ${s.accessory === a.id ? 'is-on' : ''}`}
             onClick={() => updateSettings({ accessory: a.id })}
           >
-            <Mascot size={64} accessory={a.id} />
+            <Mascot size={64} accessory={a.id} seasonal={false} />
             <span>{a.label}</span>
           </button>
         ))}
@@ -142,7 +142,7 @@ export function Setup({ onDone, mode = 'first', existing = [], onCancel }: Setup
     </div>,
 
     <div key="buddy" className="setup-step">
-      <Mascot size={148} accessory={s.accessory} bop notes mood="singing" />
+      <Mascot size={148} accessory={s.accessory} bop notes mood="singing" seasonal={false} />
       <h1 className="h1">Pick a music buddy</h1>
       <p className="muted">Choose together! You can change this any time.</p>
       <BuddyPicker />
