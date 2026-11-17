@@ -238,6 +238,14 @@ function createSdk(timeout?: ReturnType<typeof setTimeout>) {
       }
       const t = s.track_window.current_track
       if (t && !isApproved(t) && !s.paused) void block()
+      if (s.paused) keepAwake.stopSoon()
+      else keepAwake.start()
+      setMediaKeys()
+      queueMicrotask(updateMediaSession)
+      if (t && t.uri !== lastTrackUri) {
+        if (document.hidden && lastTrackUri) logEvent(`Next song started in the background: ${t.name}`)
+        lastTrackUri = t.uri
+      }
       set({
         track: t ? { ...t, id: t.id ?? t.uri.split(':').pop()!, duration_ms: t.duration_ms } : null,
         paused: s.paused,
@@ -329,7 +337,100 @@ async function pollRemote() {
 /** Must be called synchronously inside a tap handler (iOS/Safari audio unlock). */
 export function unlockAudio() {
   void sdk?.activateElement?.().catch(() => {})
+  keepAwake.start()
 }
+
+// ── keep playing in the background (iPhone/iPad) ────────────────────────────
+// When Bop Box isn't on screen, iOS pauses the page between songs, so Spotify's player can't
+// start the next one. A silent sound playing alongside the music keeps Bop Box "playing audio",
+// so iOS lets it carry on to the next song. It stops a little while after the music is paused.
+
+function silentWav(seconds = 2) {
+  const rate = 8000
+  const n = rate * seconds
+  const buf = new ArrayBuffer(44 + n)
+  const v = new DataView(buf)
+  const str = (o: number, t: string) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)))
+  str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVE'); str(12, 'fmt ')
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true)
+  v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true)
+  str(36, 'data'); v.setUint32(40, n, true)
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128) // 8-bit silence
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
+}
+
+const keepAwake = (() => {
+  let el: HTMLAudioElement | null = null
+  let stopTimer: ReturnType<typeof setTimeout> | undefined
+  const wanted = () => !DEMO && onAppleMobile() && state.deviceId !== null && state.deviceId === state.sdkDeviceId
+  return {
+    /** Call from a tap (first start must come from a tap on iOS). */
+    start() {
+      if (!wanted()) return
+      clearTimeout(stopTimer)
+      try {
+        if (!el) {
+          el = new Audio(silentWav())
+          el.loop = true
+          el.setAttribute('playsinline', '')
+          el.setAttribute('x-webkit-airplay', 'deny')
+        }
+        if (el.paused) void el.play().catch(() => {})
+      } catch {
+        /* ignore */
+      }
+    },
+    /** Music paused: let iOS rest again after a while. */
+    stopSoon() {
+      clearTimeout(stopTimer)
+      stopTimer = setTimeout(() => el?.pause(), 90_000)
+    },
+  }
+})()
+
+// Lock screen / Control Center: show the song and let the buttons work.
+function updateMediaSession() {
+  const ms = navigator.mediaSession
+  if (!ms || DEMO) return
+  const t = state.track
+  try {
+    if (t) {
+      const img = (t as { album?: { images?: { url: string }[] } }).album?.images?.[0]?.url
+      ms.metadata = new MediaMetadata({
+        title: t.name,
+        artist: (t as { artists?: { name: string }[] }).artists?.map((a) => a.name).join(', ') ?? '',
+        album: 'Bop Box',
+        artwork: img ? [{ src: img, sizes: '640x640', type: 'image/jpeg' }] : [],
+      })
+    }
+    ms.playbackState = state.paused ? 'paused' : 'playing'
+  } catch {
+    /* ignore */
+  }
+}
+let mediaKeysSet = false
+function setMediaKeys() {
+  const ms = navigator.mediaSession
+  if (!ms || mediaKeysSet || DEMO) return
+  mediaKeysSet = true
+  const h = (a: MediaSessionAction, fn: () => void) => {
+    try {
+      ms.setActionHandler(a, fn)
+    } catch {
+      /* not supported */
+    }
+  }
+  h('play', () => state.paused && void togglePlay())
+  h('pause', () => !state.paused && void togglePlay())
+  h('nexttrack', () => void skip(1))
+  h('previoustrack', () => void skip(-1))
+}
+
+let lastTrackUri: string | null = null
+document.addEventListener('visibilitychange', () => {
+  if (DEMO || state.deviceId !== state.sdkDeviceId || !state.track) return
+  logEvent(document.hidden ? `Bop Box went to the background (music ${state.paused ? 'paused' : 'playing'})` : 'Bop Box is back on screen')
+})
 
 let lastWake = 0
 let wakeTries = 0
