@@ -417,6 +417,15 @@ code {
 .icon-btn-quiet:active {
   box-shadow: none;
 }
+.take-out {
+  color: #fff;
+  background: #ff5c7a;
+  box-shadow: 0 4px 0 #d13a5a;
+}
+.take-out:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #d13a5a;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
    Mascot

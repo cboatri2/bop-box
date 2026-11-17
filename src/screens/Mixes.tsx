@@ -6,7 +6,11 @@ import { art, artistNames, type Song } from '../lib/spotify'
 import type { ThemeName } from '../lib/store'
 import { THEMES } from './Setup'
 
-export const MIX_EMOJI = ['🦄', '🌈', '💃', '🚗', '🌙', '⭐', '🐶', '🐱', '🦕', '🍦', '🎉', '🧚', '🚀', '🌸', '🎸', '🐠']
+// Lorelei's picks first (she asked for these!), then the originals.
+export const MIX_EMOJI = [
+  '🎧', '😁', '🎶', '😊', '😍', '😎', '👾', '🎄', '🎁',
+  '🦄', '🌈', '💃', '🌙', '⭐', '🐶', '🐱', '🦕', '🍦', '🎉', '🧚', '🚀', '🌸', '🎸', '🐠',
+]
 const NAME_IDEAS = ['Dance Party', 'Car Songs', 'Sleepy Songs', 'Happy Songs', 'Sing Along', 'My Faves']
 
 export const themeColor = (t: ThemeName) => THEMES.find((x) => x.id === t)?.color ?? '#FF6FA8'
@@ -234,8 +238,8 @@ function ReorderRow({ song, onDrop, onRemove }: { song: Song; onDrop: () => void
         <b>{song.name}</b>
         <span>{artistNames(song)}</span>
       </span>
-      <button className="icon-btn icon-btn-quiet" aria-label={`Take ${song.name} out`} onClick={onRemove}>
-        <Icon name="x" size={20} />
+      <button className="icon-btn take-out" aria-label={`Take ${song.name} out of this mix`} onClick={() => { buzz(); onRemove() }}>
+        <Icon name="trash" size={20} />
       </button>
     </Reorder.Item>
   )

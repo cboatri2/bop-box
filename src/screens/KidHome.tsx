@@ -181,9 +181,9 @@ export function KidHome({ songs, shelves, mixes, mixOps, loading, onOpenPlayer, 
               <button className="btn-soft" onClick={() => setAdding(true)}>
                 <Icon name="plus" size={20} /> Add songs
               </button>
-              {mix.songs.length > 1 && (
+              {(mix.songs.length > 0 || moving) && (
                 <button className={`btn-soft ${moving ? 'is-on' : ''}`} onClick={() => setMoving((m) => !m)}>
-                  <Icon name={moving ? 'check' : 'move'} size={20} /> {moving ? 'Done' : 'Move'}
+                  <Icon name={moving ? 'check' : 'move'} size={20} /> {moving ? 'Done' : 'Change songs'}
                 </button>
               )}
               <button className="icon-btn" aria-label="Change this mix" onClick={() => setMixSheet('edit')}>
