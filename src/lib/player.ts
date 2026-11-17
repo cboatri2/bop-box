@@ -3,6 +3,7 @@ import * as sp from './spotify'
 import type { Song, Track } from './spotify'
 import { toast } from './toast'
 import { DEMO } from './demo-flag'
+import { logEvent } from './log'
 
 // ── Spotify Web Playback SDK (minimal typings) ──────────────────────────────
 
@@ -143,7 +144,10 @@ export function initPlayer(cap: number) {
   started = true
 
   const timeout = setTimeout(() => {
-    if (state.sdk === 'loading') set({ sdk: 'unsupported' })
+    if (state.sdk === 'loading') {
+      logEvent(`In-page player: no answer after 12s (Spotify SDK ${window.Spotify ? 'loaded' : 'not loaded'})`)
+      set({ sdk: 'unsupported' })
+    }
   }, 12000)
 
   window.onSpotifyWebPlaybackSDKReady = () => createSdk(timeout)
@@ -151,7 +155,10 @@ export function initPlayer(cap: number) {
   const script = document.createElement('script')
   script.src = 'https://sdk.scdn.co/spotify-player.js'
   script.async = true
-  script.onerror = () => set({ sdk: 'unsupported' })
+  script.onerror = () => {
+    logEvent("In-page player: Spotify's player script didn't load")
+    set({ sdk: 'unsupported' })
+  }
   document.body.appendChild(script)
 
   // Speakers (Spotify Connect) don't push events, so poll while visible.
@@ -175,6 +182,7 @@ function createSdk(timeout?: ReturnType<typeof setTimeout>) {
     })
     sdk.addListener('ready', ({ device_id }: { device_id: string }) => {
       if (timeout) clearTimeout(timeout)
+      if (state.sdk !== 'ready') logEvent('In-page player: ready')
       set({
         sdk: 'ready',
         sdkDeviceId: device_id,
@@ -185,15 +193,18 @@ function createSdk(timeout?: ReturnType<typeof setTimeout>) {
     sdk.addListener('not_ready', () => {
       // device went offline; it'll reconnect itself
     })
-    sdk.addListener('initialization_error', () => {
+    sdk.addListener('initialization_error', ({ message }: { message?: string }) => {
+      logEvent(`In-page player: initialization error (${message ?? 'no details'})`)
       if (timeout) clearTimeout(timeout)
       set({ sdk: 'unsupported' })
     })
-    sdk.addListener('authentication_error', () => {
+    sdk.addListener('authentication_error', ({ message }: { message?: string }) => {
+      logEvent(`In-page player: sign-in error (${message ?? 'no details'})`)
       if (timeout) clearTimeout(timeout)
       set({ sdk: 'unsupported' })
     })
-    sdk.addListener('account_error', () => {
+    sdk.addListener('account_error', ({ message }: { message?: string }) => {
+      logEvent(`In-page player: account error (${message ?? 'no details'})`)
       if (timeout) clearTimeout(timeout)
       set({ sdk: 'premium-needed' })
     })
@@ -217,7 +228,10 @@ function createSdk(timeout?: ReturnType<typeof setTimeout>) {
       })
     })
     sdk.connect().then((ok) => {
-      if (!ok) set({ sdk: 'unsupported' })
+      if (!ok) {
+        logEvent('In-page player: Spotify refused to connect')
+        set({ sdk: 'unsupported' })
+      }
     })
   }
 
@@ -453,7 +467,7 @@ export function wakeUp() {
   set({ sleepy: false })
 }
 
-/** iPhones and iPads can't play Spotify inside a web page: music plays through the Spotify app instead. */
+/** iPhone or iPad (iPads report themselves as Macs, so check for touch too). */
 export function onAppleMobile() {
   return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 }

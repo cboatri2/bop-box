@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PinPad } from '../components/PinPad'
 import { Icon, Sheet, useExitSafe } from '../components/ui'
-import { setMaxVolume } from '../lib/player'
+import { getPlayer, setMaxVolume } from '../lib/player'
 import {
   art,
   artistNames,
@@ -814,6 +814,14 @@ function Troubleshooting() {
                 (saved songs still play)
               </li>
             )}
+            <li>
+              Music playing right in this app: <b>{{ ready: 'working', loading: 'starting…', unsupported: 'not working here', 'premium-needed': 'needs Premium' }[getPlayer().sdk]}</b>
+            </li>
+            <li>
+              Opened from: <b>{(navigator as { standalone?: boolean }).standalone || matchMedia('(display-mode: standalone)').matches ? 'Home Screen' : 'browser'}</b>
+              {' · '}
+              {navigator.userAgent.match(/Version\/[\d.]+/)?.[0] ?? navigator.userAgent.slice(0, 60)}
+            </li>
             <li>
               Settings sync between devices:{' '}
               <b>
