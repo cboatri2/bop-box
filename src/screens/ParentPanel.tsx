@@ -591,6 +591,7 @@ function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: stri
   const [name, setName] = useState(s.kidName)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const ownAccount = !!s.ownAccount || kidHasOwnAccount(s.kidId)
+  const alreadyTheirs = !ownAccount && !!s.kidName && !!me?.display_name && me.display_name.toLowerCase().includes(s.kidName.toLowerCase())
 
   return (
     <section className="settings">
@@ -616,13 +617,14 @@ function Settings({ me, onRenameKid }: { me: Me | null; onRenameKid: (name: stri
             <span className="error-note block">This account isn't Premium, so songs can't play inside Bop Box.</span>
           )}
         </p>
-        {!ownAccount && (
+        {!ownAccount && !alreadyTheirs && (
           <p className="muted small">
             Give {s.kidName} their own account so they can listen at the same time as everyone else.
           </p>
         )}
+        {alreadyTheirs && <p className="muted small">That's {s.kidName}'s own account, so there's nothing else to sign in to.</p>}
         <button className="btn-soft" onClick={() => s.kidId && void beginLogin('main', s.kidId)}>
-          {ownAccount ? 'Switch account' : `Sign in with ${s.kidName}'s own Spotify`}
+          {ownAccount || alreadyTheirs ? 'Switch account' : `Sign in with ${s.kidName}'s own Spotify`}
         </button>
         {ownAccount && deviceSignedIn() && (
           <button

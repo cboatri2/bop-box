@@ -150,7 +150,11 @@ export function initPlayer(cap: number) {
     }
   }, 12000)
 
-  window.onSpotifyWebPlaybackSDKReady = () => createSdk(timeout)
+  window.onSpotifyWebPlaybackSDKReady = () => {
+    logEvent('In-page player: Spotify player script ready')
+    createSdk(timeout)
+  }
+  void checkProtectedAudio()
 
   const script = document.createElement('script')
   script.src = 'https://sdk.scdn.co/spotify-player.js'
@@ -183,7 +187,14 @@ function createSdk(timeout?: ReturnType<typeof setTimeout>) {
     sdk = new window.Spotify.Player({
       name: 'Bop Box',
       getOAuthToken: (cb: (t: string) => void) => {
-        sp.getAccessToken().then(cb, () => {})
+        if (state.sdk !== 'ready') logEvent('In-page player: Spotify asked for the sign-in')
+        sp.getAccessToken().then(
+          (t) => {
+            if (state.sdk !== 'ready') logEvent('In-page player: sign-in handed over')
+            cb(t)
+          },
+          (e) => logEvent(`In-page player: couldn't hand over the sign-in (${e instanceof Error ? e.message : e})`),
+        )
       },
       volume: state.volume * maxVolume,
     })
@@ -242,6 +253,22 @@ function createSdk(timeout?: ReturnType<typeof setTimeout>) {
       }
     })
   }
+
+/** Spotify's player needs the browser's protected-audio support (EME). Record what this device offers. */
+async function checkProtectedAudio() {
+  const w = window as unknown as Record<string, unknown>
+  const has = ['MediaKeys', 'WebKitMediaKeys', 'MediaSource', 'ManagedMediaSource'].filter((k) => k in w)
+  logEvent(`In-page player: browser has ${has.join(', ') || 'no media features'}`)
+  if (!navigator.requestMediaKeySystemAccess) return logEvent('In-page player: no protected-audio support')
+  const cfg = [{ initDataTypes: ['cenc', 'sinf', 'skd'], audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }, { contentType: 'audio/mp4; codecs="flac"' }] }]
+  for (const ks of ['com.apple.fps', 'com.apple.fps.1_0', 'com.widevine.alpha']) {
+    const answer = await Promise.race([
+      navigator.requestMediaKeySystemAccess(ks, cfg).then(() => 'yes', (e) => `no (${e?.name ?? e})`),
+      new Promise<string>((r) => setTimeout(() => r('no answer in 5s'), 5000)),
+    ])
+    logEvent(`In-page player: protected audio ${ks}: ${answer}`)
+  }
+}
 
 /** A different kid (maybe a different Spotify account) is listening now: reconnect the in-page player. */
 export function restartPlayer() {
