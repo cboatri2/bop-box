@@ -77,6 +77,7 @@ export default function App() {
       .catch(() => toast('Spotify sign-in failed. Please try again.', '😕'))
       .finally(() => {
         logLaunch()
+        void keepStorage()
         const inNow = isLoggedIn()
         if (!inNow) logEvent('Opened Bop Box: no Spotify sign-in saved on this device')
         setBoot(inNow ? 'in' : 'out')
@@ -91,6 +92,18 @@ export default function App() {
       <Toasts />
     </>
   )
+}
+
+/** Ask the browser not to clear Bop Box's saved data (sign-ins, kids) when the device runs low on space. */
+async function keepStorage() {
+  try {
+    if (!navigator.storage?.persist) return logEvent('Keeping saved data: not supported here')
+    if (await navigator.storage.persisted()) return
+    const ok = await navigator.storage.persist()
+    logEvent(`Keeping saved data: ${ok ? 'yes, the device will keep it' : 'the device said no'}`)
+  } catch {
+    /* ignore */
+  }
 }
 
 /** One line per launch describing what this device remembered, to diagnose "it forgot me". */
