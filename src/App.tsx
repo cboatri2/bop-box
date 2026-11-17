@@ -4,7 +4,7 @@ import { Mascot } from './components/Mascot'
 import { PinPad } from './components/PinPad'
 import { Backdrop, Icon, SafeLayer, Sheet, Toasts } from './components/ui'
 import { allowedSongs, keepAllowed, loadLibrary, savedLibrary, saveLibrary, StaleLoad, type Library, type Mix } from './lib/library'
-import { appleDeviceName, getPlayer, initPlayer, onAppleMobile, restartPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
+import { getPlayer, initPlayer, onAppleMobile, restartPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
 import {
   addToPlaylist,
   AuthError,
