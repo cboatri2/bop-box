@@ -152,6 +152,7 @@ export function initPlayer(cap: number) {
 
   window.onSpotifyWebPlaybackSDKReady = () => {
     logEvent('In-page player: Spotify player script ready')
+    watchSpotifyFrame()
     createSdk(timeout)
   }
   void checkProtectedAudio()
@@ -253,6 +254,25 @@ function createSdk(timeout?: ReturnType<typeof setTimeout>) {
       }
     })
   }
+
+/** Spotify's player runs inside a hidden frame from sdk.scdn.co. Record whether it loads and talks back. */
+function watchSpotifyFrame() {
+  const frame = document.querySelector<HTMLIFrameElement>('iframe[src^="https://sdk.scdn.co"]')
+  if (!frame) return logEvent("In-page player: Spotify's hidden player frame wasn't created")
+  frame.addEventListener('load', () => logEvent("In-page player: Spotify's hidden player frame loaded"))
+  frame.addEventListener('error', () => logEvent("In-page player: Spotify's hidden player frame failed to load"))
+  let heard = 0
+  const onMessage = (e: MessageEvent) => {
+    if (e.origin !== 'https://sdk.scdn.co') return
+    heard++
+    if (heard === 1) logEvent('In-page player: first message from Spotify’s player frame')
+    if (heard >= 1) window.removeEventListener('message', onMessage)
+  }
+  window.addEventListener('message', onMessage)
+  setTimeout(() => {
+    if (!heard) logEvent('In-page player: Spotify’s player frame said nothing for 10s (blocked by a filter?)')
+  }, 10000)
+}
 
 /** Spotify's player needs the browser's protected-audio support (EME). Record what this device offers. */
 async function checkProtectedAudio() {
