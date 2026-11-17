@@ -335,7 +335,11 @@ export async function playSongs(songs: Song[], index: number) {
     toast(
       state.sdk === 'premium-needed'
         ? 'This Spotify account needs Premium to play music.'
-        : 'Pick a speaker to play on first!',
+        : state.sdk === 'loading'
+          ? 'The music is still waking up. Try again in a few seconds!'
+          : onAppleMobile()
+            ? 'Tap “Wake up music” first!'
+            : 'Pick a speaker to play on first!',
       '🔈',
     )
     return false
