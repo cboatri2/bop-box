@@ -14,6 +14,14 @@ export function Logo({ size = 'lg' }: { size?: 'lg' | 'sm' }) {
   )
 }
 
+const resettingPin = () => {
+  try {
+    return !!localStorage.getItem('bopbox.pinReset')
+  } catch {
+    return false
+  }
+}
+
 export function Welcome() {
   if (!CLIENT_ID) {
     return (
@@ -57,7 +65,9 @@ export function Welcome() {
         </button>
       </motion.div>
       <p className="fineprint">
-        For grown-ups: sign in with the Spotify Premium account your kiddo will listen on.
+        {resettingPin()
+          ? "Resetting the grown-up PIN: sign in with this device's Spotify account, then pick a new PIN. The kids and their music are safe."
+          : 'For grown-ups: sign in with the Spotify Premium account your kiddo will listen on.'}
       </p>
     </main>
   )

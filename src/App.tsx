@@ -19,7 +19,6 @@ import {
   getMe,
   playlistCooldownUntil,
   isLoggedIn,
-  logout,
   mixDescription,
   mixPlaylistName,
   removeFromPlaylist,
@@ -78,7 +77,14 @@ export default function App() {
       .finally(() => {
         logLaunch()
         void keepStorage()
-        const inNow = isLoggedIn()
+        const resetting = pinResetPending()
+        if (resetting && deviceSignedIn()) {
+          // The grown-up proved it's them by signing in to Spotify: now they can pick a new PIN.
+          clearPinReset()
+          updateSettings({ pinHash: '' })
+          logEvent('PIN reset: grown-up signed in again, picking a new PIN')
+        }
+        const inNow = resetting && !deviceSignedIn() ? false : isLoggedIn()
         if (!inNow) logEvent('Opened Bop Box: no Spotify sign-in saved on this device')
         setBoot(inNow ? 'in' : 'out')
       })
@@ -444,6 +450,7 @@ function Main() {
   )
 
   if (!s.setupDone) return <FirstRun onDone={() => setView('parent')} />
+  if (!s.pinHash) return <NewPin />
 
   if (view === 'add-kid') {
     const onDevice = new Set(s.kids.map((k) => k.playlistId).filter(Boolean))
@@ -639,16 +646,74 @@ function Main() {
   )
 }
 
+const PIN_RESET_KEY = 'bopbox.pinReset'
+function startPinReset() {
+  try {
+    localStorage.setItem(PIN_RESET_KEY, String(Date.now()))
+  } catch {
+    /* ignore */
+  }
+}
+function pinResetPending() {
+  try {
+    return !!localStorage.getItem(PIN_RESET_KEY)
+  } catch {
+    return false
+  }
+}
+function clearPinReset() {
+  try {
+    localStorage.removeItem(PIN_RESET_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+/** After a PIN reset: pick the new grown-up PIN (twice). Everything else on the device is untouched. */
+function NewPin() {
+  const [first, setFirst] = useState<string | null>(null)
+  return (
+    <main className="center-screen">
+      <div className="card setup-card">
+        <PinPad
+          key={first ? 'confirm' : 'pick'}
+          title={first ? 'Type it once more' : 'Pick a new grown-up PIN'}
+          subtitle={first ? 'Just to be sure.' : '4 numbers the kids won’t guess.'}
+          onComplete={async (pin) => {
+            if (!first) {
+              setFirst(pin)
+              return true
+            }
+            if (pin !== first) {
+              setFirst(null)
+              toast("Those didn't match. Let's try again.", '🙈')
+              return false
+            }
+            updateSettings({ pinHash: await hashPin(pin) })
+            logEvent('Picked a new grown-up PIN')
+            toast('New PIN saved!', '🔒')
+            return true
+          }}
+        />
+      </div>
+    </main>
+  )
+}
+
 function ForgotPin() {
   const [armed, setArmed] = useState(false)
   return armed ? (
     <div className="forgot">
-      <p className="muted small">Resetting signs out of Spotify. A grown-up will sign in again and pick a new PIN.</p>
+      <p className="muted small">
+        To prove it's a grown-up, you'll sign in to this device's Spotify account again, then pick a new PIN. The kids,
+        their music and their sign-ins all stay.
+      </p>
       <button
         className="btn-danger"
         onClick={() => {
-          updateSettings({ pinHash: '', setupDone: false })
-          logout()
+          startPinReset()
+          forgetDeviceAccount()
+          logEvent('PIN reset started (kids and their sign-ins kept)')
           window.location.reload()
         }}
       >
