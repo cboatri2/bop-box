@@ -4,7 +4,7 @@ import { Mascot } from './components/Mascot'
 import { PinPad } from './components/PinPad'
 import { Backdrop, Icon, SafeLayer, Sheet, Toasts } from './components/ui'
 import { allowedSongs, keepAllowed, loadLibrary, savedLibrary, saveLibrary, StaleLoad, type Library, type Mix } from './lib/library'
-import { getPlayer, initPlayer, restartPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
+import { appleDeviceName, getPlayer, initPlayer, onAppleMobile, restartPlayer, setApproved, setMaxVolume, togglePlay, usePlayer, wakeUp } from './lib/player'
 import {
   addToPlaylist,
   AuthError,
@@ -516,7 +516,9 @@ function Main() {
           <span>
             {p.sdk === 'premium-needed'
               ? 'Ask a grown-up: this Spotify account needs Premium to play music.'
-              : "Music can't play in this browser. Pick a speaker!"}
+              : onAppleMobile()
+                ? `Open the Spotify app on this ${appleDeviceName()}, then come back and tap Pick speaker!`
+                : "Music can't play in this browser. Pick a speaker!"}
           </span>
           {p.sdk === 'unsupported' && (
             <button className="btn-soft" onClick={() => setSpeakerOpen(true)}>

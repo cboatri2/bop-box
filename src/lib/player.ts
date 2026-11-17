@@ -452,3 +452,9 @@ function tickSleep() {
 export function wakeUp() {
   set({ sleepy: false })
 }
+
+/** iPhones and iPads can't play Spotify inside a web page: music plays through the Spotify app instead. */
+export function onAppleMobile() {
+  return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+export const appleDeviceName = () => (/iPhone/.test(navigator.userAgent) ? 'iPhone' : 'iPad')
