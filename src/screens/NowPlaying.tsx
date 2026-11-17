@@ -270,7 +270,7 @@ export function SpeakerSheet({ open, onClose }: { open: boolean; onClose: () => 
         {devices?.length === 0 && !p.sdkDeviceId && (
           <p className="muted">
             {onAppleMobile()
-              ? `Open the Spotify app on this ${appleDeviceName()} (signed in to the same account) and play any song for a second. Then come back here and pick “${appleDeviceName()}”.`
+              ? `Grown-ups: open Spotify on this ${appleDeviceName()} for a moment (same account), or turn on a Spotify speaker, then pick it here.`
               : 'No speakers found. Open Spotify on a speaker or computer, then try again.'}
           </p>
         )}

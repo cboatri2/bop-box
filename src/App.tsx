@@ -517,7 +517,7 @@ function Main() {
             {p.sdk === 'premium-needed'
               ? 'Ask a grown-up: this Spotify account needs Premium to play music.'
               : onAppleMobile()
-                ? `Open the Spotify app on this ${appleDeviceName()}, then come back and tap Pick speaker!`
+                ? "The music needs a grown-up to switch it on. Ask a grown-up!"
                 : "Music can't play in this browser. Pick a speaker!"}
           </span>
           {p.sdk === 'unsupported' && (
