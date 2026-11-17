@@ -76,6 +76,7 @@ export default function App() {
       })
       .catch(() => toast('Spotify sign-in failed. Please try again.', '😕'))
       .finally(() => {
+        logLaunch()
         const inNow = isLoggedIn()
         if (!inNow) logEvent('Opened Bop Box: no Spotify sign-in saved on this device')
         setBoot(inNow ? 'in' : 'out')
@@ -90,6 +91,23 @@ export default function App() {
       <Toasts />
     </>
   )
+}
+
+/** One line per launch describing what this device remembered, to diagnose "it forgot me". */
+function logLaunch() {
+  try {
+    const st = getSettings()
+    const app = (navigator as { standalone?: boolean }).standalone || matchMedia('(display-mode: standalone)').matches
+    const saved = (k: string) => (localStorage.getItem(k) ? 'yes' : 'no')
+    const kids = st.kids.map((k) => `${k.kidName || '?'} ${saved(`bopbox.token.kid.${k.id}`)}`).join(', ')
+    const active = st.kids.find((k) => k.id === st.activeKidId)?.kidName ?? 'none'
+    logEvent(
+      `Launched from ${app ? 'Home Screen' : 'browser'}: setup ${st.setupDone ? 'done' : 'not done'}, listening: ${active}, ` +
+        `sign-ins saved: device ${saved('bopbox.token')}, grown-up ${saved('bopbox.token.grownup')}${kids ? `, ${kids}` : ''}`,
+    )
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 function useTheme() {
