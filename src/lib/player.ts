@@ -169,6 +169,13 @@ export function initPlayer(cap: number) {
 
   // Sleep timer
   setInterval(tickSleep, 500)
+
+  // iPhone/iPad: the first taps unlock audio so the in-page player can start.
+  const onTap = () => {
+    if (state.sdk === 'ready') return document.removeEventListener('touchend', onTap, true)
+    wakeInPagePlayer()
+  }
+  document.addEventListener('touchend', onTap, true)
 }
 
 function createSdk(timeout?: ReturnType<typeof setTimeout>) {
@@ -228,6 +235,7 @@ function createSdk(timeout?: ReturnType<typeof setTimeout>) {
       })
     })
     sdk.connect().then((ok) => {
+      logEvent(`In-page player: connect answered ${ok ? 'yes' : 'no'}`)
       if (!ok) {
         logEvent('In-page player: Spotify refused to connect')
         set({ sdk: 'unsupported' })
@@ -274,6 +282,45 @@ async function pollRemote() {
 /** Must be called synchronously inside a tap handler (iOS/Safari audio unlock). */
 export function unlockAudio() {
   void sdk?.activateElement?.().catch(() => {})
+}
+
+let lastWake = 0
+let wakeTries = 0
+/**
+ * Safari on iPhone/iPad won't let the in-page player start until someone taps. Call this from a tap:
+ * it unlocks audio and asks Spotify to connect again if the player hasn't come up yet.
+ */
+export function wakeInPagePlayer(why = 'tap') {
+  if (DEMO || !sdk || state.sdk === 'ready' || state.sdk === 'premium-needed') return
+  unlockAudio()
+  if (Date.now() - lastWake < 4000) return
+  lastWake = Date.now()
+  wakeTries++
+  if (state.sdk === 'unsupported') set({ sdk: 'loading' })
+  if (wakeTries % 2 === 0) {
+    // Connecting again didn't help last time: build a fresh player inside this tap.
+    logEvent(`In-page player: starting a fresh player after a ${why}`)
+    try {
+      sdk.disconnect()
+    } catch {
+      /* ignore */
+    }
+    createSdk()
+    unlockAudio()
+    const fresh = sdk
+    setTimeout(() => {
+      if (sdk === fresh && state.sdk === 'loading') set({ sdk: 'unsupported' })
+    }, 8000)
+    return
+  }
+  logEvent(`In-page player: trying again after a ${why}`)
+  const player = sdk
+  player.connect().then((ok) => {
+    logEvent(`In-page player: connect after ${why} answered ${ok ? 'yes' : 'no'}`)
+    setTimeout(() => {
+      if (sdk === player && state.sdk === 'loading') set({ sdk: 'unsupported' })
+    }, 8000)
+  })
 }
 
 export async function playSongs(songs: Song[], index: number) {
